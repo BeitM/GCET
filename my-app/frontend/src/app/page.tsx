@@ -27,21 +27,7 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <div className="hero-visual" aria-label="Robot simulation preview">
-          <div className="preview-topbar"><span><i /> FIELD // LIVE PREVIEW</span><span>12.4 FPS</span></div>
-          <div className="mini-field">
-            <div className="field-grid" />
-            <div className="mini-zone zone-a">RED BASE</div>
-            <div className="mini-zone zone-b">BLUE BASE</div>
-            <svg className="preview-path" viewBox="0 0 500 390" preserveAspectRatio="none"><path d="M75 326 C120 300 133 230 195 225 S265 280 320 215 S352 110 430 73" /></svg>
-            <div className="mini-element e1" /><div className="mini-element green e2" /><div className="mini-element e3" />
-            <div className="preview-robot"><span>▲</span><b>RL-01</b></div>
-            <div className="preview-callout"><span>PATH EFFICIENCY</span><strong>87%</strong></div>
-          </div>
-          <div className="preview-metrics">
-            <div><span>POSITION</span><b>42.8, 96.2</b></div><div><span>HEADING</span><b>−12.4°</b></div><div><span>SHOOTER</span><b className="cyan">3,420 RPM</b></div>
-          </div>
-        </div>
+        <div className="hero-visual hero-placeholder" aria-label="Placeholder image">Placeholder image</div>
       </section>
 
       <section id="workflow" className="workflow">

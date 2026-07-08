@@ -17,10 +17,10 @@ function Artifacts({ colors, vertical = false }: { colors: string[]; vertical?: 
 type FieldSimulatorProps = {
  frame:TelemetryFrame; trail:TelemetryFrame[]; running:boolean; robotWidth:number; robotLength:number;
  showPlayback:boolean; frameIndex:number; totalFrames:number; duration:number;
- onSeek:(index:number)=>void; onReplay:()=>void;
+ onSeek:(index:number)=>void; onTogglePlayback:()=>void;
 };
 
-export function FieldSimulator({frame,trail,running,robotWidth,robotLength,showPlayback,frameIndex,totalFrames,duration,onSeek,onReplay}:FieldSimulatorProps){
+export function FieldSimulator({frame,trail,running,robotWidth,robotLength,showPlayback,frameIndex,totalFrames,duration,onSeek,onTogglePlayback}:FieldSimulatorProps){
   const x=frame.x/144*100,y=frame.y/144*100;
   return <section className="field-card panel clean-field-card">
     <div className="tool-panel-head">
@@ -65,7 +65,7 @@ export function FieldSimulator({frame,trail,running,robotWidth,robotLength,showP
         </div>
       </div>
       {showPlayback&&<div className="simulation-playback">
-       <button type="button" onClick={onReplay} disabled={running} aria-label="Replay simulation">▶<span>{running?"Playing":"Replay"}</span></button>
+       <button type="button" className={running?"is-playing":""} onClick={onTogglePlayback} aria-label={running?"Pause simulation":"Play simulation"}>{running?"Ⅱ":"▶"}<span>{running?"Pause":"Play"}</span></button>
        <input aria-label="Simulation timeline" type="range" min="0" max={totalFrames-1} value={frameIndex} onChange={event=>onSeek(Number(event.target.value))}/>
        <time>{frame.time.toFixed(1)} / {duration.toFixed(1)} s</time>
       </div>}
