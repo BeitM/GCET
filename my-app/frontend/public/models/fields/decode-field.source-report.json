@@ -1,0 +1,33 @@
+{
+  "source": "DECODE\u2122 presented by RTX Full Field - am-5700_Full.step",
+  "source_objects": 687,
+  "source_solid_objects_including_assemblies": 751,
+  "skipped_hardware_objects": 453,
+  "excluded_environment_objects": 94,
+  "failed_objects": 0,
+  "linear_deflection_mm": 5.0,
+  "angular_deflection_radians": 0.65,
+  "meshes": [
+    {
+      "category": "red",
+      "path": "decode-red.obj",
+      "vertices": 34277,
+      "triangles": 69642,
+      "objects": 67
+    },
+    {
+      "category": "blue",
+      "path": "decode-blue.obj",
+      "vertices": 34277,
+      "triangles": 69642,
+      "objects": 67
+    },
+    {
+      "category": "neutral",
+      "path": "decode-neutral.obj",
+      "vertices": 1296,
+      "triangles": 2640,
+      "objects": 6
+    }
+  ]
+}
