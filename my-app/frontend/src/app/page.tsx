@@ -1,85 +1,55 @@
-'use client';
+import Link from "next/link";
 
-import { useRouter } from 'next/navigation';
+const features = [
+  { number: "01", title: "Define the goal", text: "Tell RoboLab what the robot should accomplish and provide the code you want to test." },
+  { number: "02", title: "Simulate the robot", text: "Run the program on a virtual FTC-style field while telemetry streams from each subsystem." },
+  { number: "03", title: "Learn from the data", text: "Use AI feedback to understand behavior, debug issues, and find ways to improve performance." },
+];
 
-export default function Landing() {
-  const router = useRouter();
-
-  const cardConfig = [
-    {
-      id: 'student',
-      icon: '🎓',
-      title: 'I am a Student',
-      description: 'Learn robotics fundamentals, programming, and competition strategies with AI guidance',
-      button: 'Start Learning',
-      bgGlow: 'from-blue-600/20 to-cyan-600/20',
-      borderHover: 'group-hover:border-blue-500/50',
-      shadowHover: 'hover:shadow-blue-500/20',
-      role: 'student',
-    },
-    {
-      id: 'coach',
-      icon: '👨‍🏫',
-      title: 'I am a Coach',
-      description: 'Manage teams, review robot design and code, and generate competition strategies',
-      button: 'Enter Coaching Dashboard',
-      bgGlow: 'from-purple-600/20 to-pink-600/20',
-      borderHover: 'group-hover:border-purple-500/50',
-      shadowHover: 'hover:shadow-purple-500/20',
-      role: 'coach',
-    },
-  ];
-
+export default function LandingPage() {
   return (
-    <div className="app-shell flex flex-col">
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-16 sm:py-20">
-        <div className="mb-12 max-w-2xl text-center sm:mb-16">
-          <h1 className="mb-4 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-            AI Robotics Trainer
-          </h1>
-          <p className="text-lg leading-relaxed text-gray-300 sm:text-xl">
-            Learn robotics faster with AI coaching, simulation tools, and real-time feedback.
-          </p>
+    <main className="landing-shell">
+      <nav className="landing-nav">
+        <Link href="/" className="brand"><span className="brand-mark">R</span><span>RoboLab <b>FTC</b></span></Link>
+        <div className="nav-status"><span className="live-dot" /> Prototype environment</div>
+        <Link href="/simulator" className="button button-secondary">Open simulator <span>↗</span></Link>
+      </nav>
+
+      <section className="hero">
+        <div className="hero-copy">
+          <div className="eyebrow"><span>●</span> ROBOLAB FTC · VIRTUAL ROBOTICS LAB</div>
+          <h1>Simulate your robot.<br /><em>Refine your code.</em></h1>
+          <p className="hero-lede">AI-powered simulation and debugging feedback for FTC programmers.</p>
+          <p className="hero-detail">Test robot programs in a virtual FTC environment, inspect live telemetry, and iterate with an AI mentor that helps explain, debug, and improve your code.</p>
+          <div className="hero-actions">
+            <Link href="/simulator" className="button button-primary">Launch simulator <span>→</span></Link>
+            <a href="#workflow" className="text-link">See how it works <span>↓</span></a>
+          </div>
         </div>
 
-        <div className="mb-12 grid w-full max-w-4xl grid-cols-1 gap-6 sm:mb-16 sm:gap-8 md:grid-cols-2">
-          {cardConfig.map((card) => {
-            const cardGlowClass = `absolute inset-0 rounded-2xl bg-gradient-to-r ${card.bgGlow} opacity-0 blur-xl transition-opacity duration-500 group-hover:opacity-100`;
-            const cardPanelClass = `relative flex h-full flex-col rounded-2xl border border-gray-700 bg-gradient-to-br from-gray-800 to-gray-900 p-8 transition-all duration-300 sm:p-10 ${card.borderHover} ${card.shadowHover} hover:shadow-2xl`;
-            const actionClassName = card.id === 'student'
-              ? 'rounded-lg bg-blue-600 px-6 py-3 text-center font-semibold text-white transition-all duration-300 group-hover:bg-blue-500'
-              : 'rounded-lg bg-purple-600 px-6 py-3 text-center font-semibold text-white transition-all duration-300 group-hover:bg-purple-500';
-
-            return (
-              <button
-                key={card.id}
-                onClick={() => router.push(`/login?role=${card.role}`)}
-                className="group relative h-full"
-              >
-                <div className={cardGlowClass}></div>
-
-                <div className={cardPanelClass}>
-                  <div className="mb-6 text-5xl sm:text-6xl">{card.icon}</div>
-
-                  <h3 className="mb-4 text-left text-2xl font-bold text-white sm:text-3xl">
-                    {card.title}
-                  </h3>
-
-                  <p className="mb-8 flex-grow text-left text-base text-gray-300 sm:text-lg">
-                    {card.description}
-                  </p>
-
-                  <div className={actionClassName}>{card.button}</div>
-                </div>
-              </button>
-            );
-          })}
+        <div className="hero-visual" aria-label="Robot simulation preview">
+          <div className="preview-topbar"><span><i /> FIELD // LIVE PREVIEW</span><span>12.4 FPS</span></div>
+          <div className="mini-field">
+            <div className="field-grid" />
+            <div className="mini-zone zone-a">RED BASE</div>
+            <div className="mini-zone zone-b">BLUE BASE</div>
+            <svg className="preview-path" viewBox="0 0 500 390" preserveAspectRatio="none"><path d="M75 326 C120 300 133 230 195 225 S265 280 320 215 S352 110 430 73" /></svg>
+            <div className="mini-element e1" /><div className="mini-element green e2" /><div className="mini-element e3" />
+            <div className="preview-robot"><span>▲</span><b>RL-01</b></div>
+            <div className="preview-callout"><span>PATH EFFICIENCY</span><strong>87%</strong></div>
+          </div>
+          <div className="preview-metrics">
+            <div><span>POSITION</span><b>42.8, 96.2</b></div><div><span>HEADING</span><b>−12.4°</b></div><div><span>SHOOTER</span><b className="cyan">3,420 RPM</b></div>
+          </div>
         </div>
-      </main>
+      </section>
 
-      <footer className="border-t border-gray-800 px-4 py-6">
-        <p className="text-center text-sm text-gray-500">Powered by AI robotics coaching system</p>
-      </footer>
-    </div>
+      <section id="workflow" className="workflow">
+        <div className="section-label">THE ROBO LAB LOOP</div>
+        <div className="workflow-grid">
+          {features.map((feature) => <article key={feature.number}><span>{feature.number}</span><h2>{feature.title}</h2><p>{feature.text}</p></article>)}
+        </div>
+      </section>
+    </main>
   );
 }
