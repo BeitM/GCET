@@ -2,3 +2,6 @@
 .idea/
 
 ai_task.md
+.codex_state.json
+*.pdf
+loop_prompt.md

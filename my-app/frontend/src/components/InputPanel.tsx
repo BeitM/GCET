@@ -58,7 +58,8 @@ function NumberDraftInput({
   const [draft, setDraft] = useState(String(Number(value.toFixed(1))));
 
   useEffect(() => {
-    setDraft(String(Number(value.toFixed(1))));
+    const syncDraft = window.setTimeout(() => setDraft(String(Number(value.toFixed(1)))), 0);
+    return () => window.clearTimeout(syncDraft);
   }, [value]);
 
   const commit = (raw: string) => {
