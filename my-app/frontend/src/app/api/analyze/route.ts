@@ -107,26 +107,32 @@ const sanitizeRequest = (value: unknown): AnalyzeRequest | null => {
   const telemetry = value.telemetry
     .slice(-MAX_TELEMETRY_FRAMES)
     .filter((frame): frame is Record<string, unknown> => isObject(frame))
-    .map((frame) => ({
-      time: safeNumber(frame.time, 0),
-      x: safeNumber(frame.x, 0),
-      y: safeNumber(frame.y, 0),
-      heading: safeNumber(frame.heading, 0),
-      leftPower: safeNumber(frame.leftPower, 0),
-      rightPower: safeNumber(frame.rightPower, 0),
-      leftEncoder: safeNumber(frame.leftEncoder, 0),
-      rightEncoder: safeNumber(frame.rightEncoder, 0),
-      shooterTarget: safeNumber(frame.shooterTarget, 0),
-      shooterRpm: safeNumber(frame.shooterRpm, 0),
-      feeder: Boolean(frame.feeder),
-      armTarget: safeNumber(frame.armTarget, 0),
-      armPosition: safeNumber(frame.armPosition, 0),
-      intake: frame.intake === "in" || frame.intake === "out" ? frame.intake : "off",
-      claw: frame.claw === "open" ? "open" : "closed",
-      artifactCount: safeNumber(frame.artifactCount, 0),
-      event: typeof frame.event === "string" ? frame.event.slice(0, 120) : undefined,
-      warning: typeof frame.warning === "string" ? frame.warning.slice(0, 120) : undefined,
-    }));
+    .map((frame): AnalyzeTelemetryFrame => {
+      const intake: AnalyzeTelemetryFrame["intake"] =
+        frame.intake === "in" || frame.intake === "out" ? frame.intake : "off";
+      const claw: AnalyzeTelemetryFrame["claw"] = frame.claw === "open" ? "open" : "closed";
+
+      return {
+        time: safeNumber(frame.time, 0),
+        x: safeNumber(frame.x, 0),
+        y: safeNumber(frame.y, 0),
+        heading: safeNumber(frame.heading, 0),
+        leftPower: safeNumber(frame.leftPower, 0),
+        rightPower: safeNumber(frame.rightPower, 0),
+        leftEncoder: safeNumber(frame.leftEncoder, 0),
+        rightEncoder: safeNumber(frame.rightEncoder, 0),
+        shooterTarget: safeNumber(frame.shooterTarget, 0),
+        shooterRpm: safeNumber(frame.shooterRpm, 0),
+        feeder: Boolean(frame.feeder),
+        armTarget: safeNumber(frame.armTarget, 0),
+        armPosition: safeNumber(frame.armPosition, 0),
+        intake,
+        claw,
+        artifactCount: safeNumber(frame.artifactCount, 0),
+        event: typeof frame.event === "string" ? frame.event.slice(0, 120) : undefined,
+        warning: typeof frame.warning === "string" ? frame.warning.slice(0, 120) : undefined,
+      };
+    });
 
   const robotSetup = value.robotSetup;
   const selectedArtifactRowsRaw = Array.isArray(robotSetup.selectedArtifactRows) ? robotSetup.selectedArtifactRows : [];
