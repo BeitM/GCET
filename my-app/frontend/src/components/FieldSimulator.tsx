@@ -1,6 +1,6 @@
 import { FieldScene3D } from "@/components/FieldScene3D";
 import { fieldSeasons } from "@/lib/seasons";
-import { TelemetryFrame } from "@/lib/types";
+import { CoordinateSystem, TelemetryFrame } from "@/lib/types";
 import { RobotPresetId } from "@/lib/robots";
 
 type FieldSimulatorProps = {
@@ -10,6 +10,7 @@ type FieldSimulatorProps = {
   robotWidth: number;
   robotLength: number;
   robotId: RobotPresetId;
+  coordinateSystem: CoordinateSystem;
   shootSignal?: number;
   showPlayback: boolean;
   frameIndex: number;
@@ -26,6 +27,7 @@ export function FieldSimulator({
   robotWidth,
   robotLength,
   robotId,
+  coordinateSystem,
   shootSignal,
   showPlayback,
   frameIndex,
@@ -64,6 +66,7 @@ export function FieldSimulator({
           robotWidth={robotWidth}
           robotLength={robotLength}
           robotId={robotId}
+          coordinateSystem={coordinateSystem}
           running={running}
           shootSignal={shootSignal}
         />

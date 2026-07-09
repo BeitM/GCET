@@ -5,5 +5,6 @@ export type RobotState = {
   claw:"open"|"closed";
 };
 
+export type CoordinateSystem = "corner" | "center";
 export type TelemetryFrame = RobotState & { time:number; event?:string; warning?:string };
 export type AIFeedback = { headline:string; status:"warning"|"complete"; happened:string; cause:string; evidence:string[]; fix:string; optimization:string; concept:string };

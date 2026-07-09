@@ -11,12 +11,12 @@ export function AIFeedbackPanel({ data, goal }: { data: AIFeedback | null; goal:
         <div className="ai-orb">*</div>
         <span className="kicker">AI MENTOR</span>
         <h2>Ready when you are.</h2>
-        <p>Run the routine, then use the placeholder feedback action while the AI integration is being built.</p>
+        <p>Run the robot code, then use the placeholder feedback action while the AI integration is being built.</p>
       </section>
     );
   }
 
-  const report = `ROBOLAB FTC SANDBOX REPORT
+  const report = `ROBOLAB FTC SIMULATION REPORT
 Goal: ${goal}
 
 ${data.headline}

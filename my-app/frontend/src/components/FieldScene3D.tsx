@@ -1,11 +1,11 @@
 "use client";
 
-import { Line, OrbitControls, useGLTF } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Line, OrbitControls, Text, useGLTF } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { BallCollider, CuboidCollider, Physics, RigidBody, RapierRigidBody } from "@react-three/rapier";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { TelemetryFrame } from "@/lib/types";
+import { CoordinateSystem, TelemetryFrame } from "@/lib/types";
 import { ShooterRobotModel } from "@/components/ShooterRobotModel";
 import { RobotPresetId } from "@/lib/robots";
 
@@ -19,12 +19,27 @@ type FieldScene3DProps = {
   robotWidth: number;
   robotLength: number;
   robotId: RobotPresetId;
+  coordinateSystem: CoordinateSystem;
   running: boolean;
   shootSignal?: number;
 };
 
+type FieldMouseCoordinates = { x: number; y: number } | null;
+type ReferenceTextProps = ComponentProps<typeof Text>;
+
 function fieldPosition(x: number, y: number): [number, number, number] {
   return [(x - 72) * INCHES_TO_METERS, 0, (y - 72) * INCHES_TO_METERS];
+}
+
+function displayCoordinatesFromWorld(point: THREE.Vector3, coordinateSystem: CoordinateSystem): FieldMouseCoordinates {
+  const half = FIELD_METERS / 2;
+  if (point.x < -half || point.x > half || point.z < -half || point.z > half) return null;
+
+  const fieldX = Math.min(FIELD_INCHES, Math.max(0, point.x / INCHES_TO_METERS + FIELD_INCHES / 2));
+  const fieldY = Math.min(FIELD_INCHES, Math.max(0, point.z / INCHES_TO_METERS + FIELD_INCHES / 2));
+
+  if (coordinateSystem === "center") return { x: fieldX - FIELD_INCHES / 2, y: FIELD_INCHES / 2 - fieldY };
+  return { x: fieldX, y: FIELD_INCHES - fieldY };
 }
 
 function fieldPercent(x: number, z: number): [number, number, number] {
@@ -110,12 +125,12 @@ function FieldMarkings() {
       <Line points={[fieldPercent(10, 10), fieldPercent(50, 50)]} color="#f4f5f2" lineWidth={3} />
       <Line points={[fieldPercent(100, 33), fieldPercent(84, 50), fieldPercent(100, 67)]} color="#f4f5f2" lineWidth={3} />
       <Line points={[fieldPercent(50, 50), fieldPercent(10, 90)]} color="#f4f5f2" lineWidth={3} />
-      <Line points={[fieldPercent(0, 83), fieldPercent(17, 96)]} color="#f4f5f2" lineWidth={3} />
+      <Line points={[fieldPercent(1.389, 81.611), fieldPercent(18.389, 94.611)]} color="#f4f5f2" lineWidth={3} />
 
-      <FlatTape from={fieldPercent(43, 3.7)} to={fieldPercent(83, 3.7)} color="#3437a5" />
+      <FlatTape from={fieldPercent(45.083, 5.436)} to={fieldPercent(83, 5.436)} color="#3437a5" />
       <FlatTape from={fieldPercent(48.6, 84)} to={fieldPercent(48.6, 91)} color="#3437a5" />
       <FlatTape from={fieldPercent(50.4, 84)} to={fieldPercent(50.4, 91)} color="#3437a5" />
-      <FlatTape from={fieldPercent(43, 96.3)} to={fieldPercent(83, 96.3)} color="#ed2532" />
+      <FlatTape from={fieldPercent(45.083, 94.564)} to={fieldPercent(83, 94.564)} color="#ed2532" />
       <FlatTape from={fieldPercent(48.6, 9)} to={fieldPercent(48.6, 16)} color="#ed2532" />
       <FlatTape from={fieldPercent(50.4, 9)} to={fieldPercent(50.4, 16)} color="#ed2532" />
 
@@ -212,7 +227,134 @@ function PhysicsBall({ shootSignal = -1 }: { shootSignal?: number }) {
   );
 }
 
-function Scene(props: FieldScene3DProps) {
+function ReferenceText({ children, ...props }: ReferenceTextProps) {
+  const text = useRef<THREE.Mesh>(null);
+
+  useEffect(() => {
+    if (!text.current) return;
+    text.current.renderOrder = 2000;
+    text.current.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material) => {
+        material.depthTest = false;
+        material.depthWrite = false;
+        material.transparent = true;
+        material.needsUpdate = true;
+      });
+    });
+  }, [children]);
+
+  return (
+    <Text ref={text} {...props} material-depthTest={false} material-depthWrite={false} renderOrder={2000}>
+      {children}
+    </Text>
+  );
+}
+
+function MouseCoordinateTracker({
+  enabled,
+  coordinateSystem,
+  onChange,
+}: {
+  enabled: boolean;
+  coordinateSystem: CoordinateSystem;
+  onChange: (coordinates: FieldMouseCoordinates) => void;
+}) {
+  const { camera, gl } = useThree();
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const pointer = useMemo(() => new THREE.Vector2(), []);
+  const fieldPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const hit = useMemo(() => new THREE.Vector3(), []);
+
+  useEffect(() => {
+    if (!enabled) {
+      onChange(null);
+      return;
+    }
+
+    const element = gl.domElement;
+    const updateCoordinates = (event: PointerEvent) => {
+      const rect = element.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      onChange(raycaster.ray.intersectPlane(fieldPlane, hit) ? displayCoordinatesFromWorld(hit, coordinateSystem) : null);
+    };
+    const clearCoordinates = () => onChange(null);
+
+    element.addEventListener("pointermove", updateCoordinates);
+    element.addEventListener("pointerleave", clearCoordinates);
+    return () => {
+      element.removeEventListener("pointermove", updateCoordinates);
+      element.removeEventListener("pointerleave", clearCoordinates);
+    };
+  }, [camera, coordinateSystem, enabled, fieldPlane, gl.domElement, hit, onChange, pointer, raycaster]);
+
+  return null;
+}
+
+function FieldReference3D({ coordinateSystem }: { coordinateSystem: CoordinateSystem }) {
+  const labels = coordinateSystem === "center" ? [-72, -48, -24, 0, 24, 48, 72] : [0, 24, 48, 72, 96, 120, 144];
+  const min = labels[0];
+  const max = labels[labels.length - 1];
+  const lineY = 0.072;
+  const labelY = 0.16;
+  const compassY = 0.112;
+  const labelWallInset = 6;
+  const cyan = "#39d6ff";
+  const overlayRenderOrder = 1000;
+  const compassLineWidth = 3.25;
+  const labelRotation: [number, number, number] = [-Math.PI / 2, 0, 0];
+  const toWorld = (displayX: number, displayY: number, y = lineY): [number, number, number] => {
+    const fieldX = coordinateSystem === "center" ? displayX + 72 : displayX;
+    const fieldY = coordinateSystem === "center" ? 72 - displayY : 144 - displayY;
+    const [x, , z] = fieldPosition(fieldX, fieldY);
+    return [x, y, z];
+  };
+  const compassPoints = Array.from({ length: 65 }, (_, index) => {
+    const angle = index / 64 * Math.PI * 2;
+    return [Math.cos(angle) * 0.35, compassY, Math.sin(angle) * 0.35] as [number, number, number];
+  });
+  const keepLabelOffWall = (value: number) => Math.min(max - labelWallInset, Math.max(min + labelWallInset, value));
+
+  return (
+    <group>
+      {labels.map((label) => (
+        <ReferenceText key={`label-x-${label}`} position={toWorld(keepLabelOffWall(label), min + labelWallInset, labelY)} rotation={labelRotation} fontSize={0.14} color="#f5fbff" anchorX="center" anchorY="middle" outlineWidth={0.014} outlineColor="#071014">
+          {label}
+        </ReferenceText>
+      ))}
+      {labels.map((label) => (
+        <ReferenceText key={`label-y-${label}`} position={toWorld(min + labelWallInset, keepLabelOffWall(label), labelY)} rotation={labelRotation} fontSize={0.14} color="#f5fbff" anchorX="center" anchorY="middle" outlineWidth={0.014} outlineColor="#071014">
+          {label}
+        </ReferenceText>
+      ))}
+
+      <group position={[0, 0, 0]}>
+        <Line points={[[-0.68, compassY, 0], [0.68, compassY, 0]]} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        <Line points={[[0, compassY, 0.68], [0, compassY, -0.68]]} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        <Line points={[[0.68, compassY, 0], [0.5, compassY, -0.15], [0.5, compassY, 0.15], [0.68, compassY, 0]]} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        <Line points={[[-0.68, compassY, 0], [-0.5, compassY, -0.15], [-0.5, compassY, 0.15], [-0.68, compassY, 0]]} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        <Line points={[[0, compassY, -0.68], [-0.15, compassY, -0.5], [0.15, compassY, -0.5], [0, compassY, -0.68]]} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        <Line points={[[0, compassY, 0.68], [-0.15, compassY, 0.5], [0.15, compassY, 0.5], [0, compassY, 0.68]]} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        <Line points={compassPoints} color={cyan} lineWidth={compassLineWidth} depthTest={false} renderOrder={overlayRenderOrder} />
+        {[
+          { label: "0°", position: [0.86, labelY, 0] as [number, number, number] },
+          { label: "90°", position: [0, labelY, -0.87] as [number, number, number] },
+          { label: "180°", position: [-0.9, labelY, 0] as [number, number, number] },
+          { label: "270°", position: [0, labelY, 0.9] as [number, number, number] },
+        ].map(({ label, position }) => (
+          <ReferenceText key={label} position={position} rotation={labelRotation} fontSize={0.19} color="#f5fbff" anchorX="center" anchorY="middle" outlineWidth={0.014} outlineColor="#071014">
+            {label}
+          </ReferenceText>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoordinates: (coordinates: FieldMouseCoordinates) => void }) {
   return (
     <>
       <color attach="background" args={["#080c11"]} />
@@ -226,18 +368,33 @@ function Scene(props: FieldScene3DProps) {
         <Robot key={`${props.robotId}-${props.robotWidth}-${props.robotLength}`} frame={props.frame} width={props.robotWidth} length={props.robotLength} running={props.running} />
         <PhysicsBall shootSignal={props.shootSignal} />
       </Physics>
+      {props.showReference && <FieldReference3D coordinateSystem={props.coordinateSystem} />}
       <RobotTrail trail={props.trail} />
+      <MouseCoordinateTracker enabled={props.showReference} coordinateSystem={props.coordinateSystem} onChange={props.onMouseCoordinates} />
       <OrbitControls makeDefault target={[0, 0, 0]} minDistance={3.2} maxDistance={8} minPolarAngle={0.3} maxPolarAngle={Math.PI / 2.1} enableDamping />
     </>
   );
 }
 
 export function FieldScene3D(props: FieldScene3DProps) {
+  const [showReference, setShowReference] = useState(false);
+  const [mouseCoordinates, setMouseCoordinates] = useState<FieldMouseCoordinates>(null);
+
   return (
     <div className="field-scene-3d" aria-label="Interactive 3D DECODE field simulation">
       <Canvas shadows dpr={[1, 1.75]} camera={{ position: [4.5, 4.6, 5.2], fov: 42, near: 0.1, far: 50 }}>
-        <Suspense fallback={null}><Scene {...props} /></Suspense>
+        <Suspense fallback={null}><Scene {...props} showReference={showReference} onMouseCoordinates={setMouseCoordinates} /></Suspense>
       </Canvas>
+      <button type="button" className={`field-reference-toggle ${showReference ? "active" : ""}`} onClick={() => setShowReference((current) => !current)}>
+        Field compass
+      </button>
+      {showReference && (
+        <div className="field-coordinate-readout" aria-live="polite">
+          <span>Mouse</span>
+          <b>{mouseCoordinates ? `X ${mouseCoordinates.x.toFixed(1)} in` : "X --"}</b>
+          <b>{mouseCoordinates ? `Y ${mouseCoordinates.y.toFixed(1)} in` : "Y --"}</b>
+        </div>
+      )}
       <div className="field-camera-hint">Drag to orbit · Scroll to zoom</div>
     </div>
   );
