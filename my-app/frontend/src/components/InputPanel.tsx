@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
-import { CoordinateSystem } from "@/lib/types";
+import { ArtifactRowId, CoordinateSystem } from "@/lib/types";
+
+const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
+  { id: "topLoading", label: "Blue Loading Zone" },
+  { id: "topRight", label: "Blue 1" },
+  { id: "topCenter", label: "Blue 2" },
+  { id: "topLeft", label: "Blue 3" },
+  { id: "bottomLoading", label: "Red Loading Zone" },
+  { id: "bottomRight", label: "Red 1" },
+  { id: "bottomCenter", label: "Red 2" },
+  { id: "bottomLeft", label: "Red 3" },
+];
 
 type InputPanelProps = {
   goal: string;
@@ -8,6 +19,7 @@ type InputPanelProps = {
   code: string;
   setCode: (value: string) => void;
   onRun: () => void;
+  onStop: () => void;
   running: boolean;
   onAnalyze: () => void;
   canAnalyze: boolean;
@@ -21,6 +33,11 @@ type InputPanelProps = {
   setStartX: (value: number) => void;
   setStartY: (value: number) => void;
   setStartHeading: (value: number) => void;
+  selectedArtifactRows: ArtifactRowId[];
+  setSelectedArtifactRows: (value: ArtifactRowId[]) => void;
+  preloadCount: number;
+  setPreloadCount: (value: number) => void;
+  setupWarning: string;
 };
 
 function NumberDraftInput({
@@ -91,6 +108,7 @@ export function InputPanel({
   code,
   setCode,
   onRun,
+  onStop,
   running,
   onAnalyze,
   canAnalyze,
@@ -104,8 +122,14 @@ export function InputPanel({
   setStartX,
   setStartY,
   setStartHeading,
+  selectedArtifactRows,
+  setSelectedArtifactRows,
+  preloadCount,
+  setPreloadCount,
+  setupWarning,
 }: InputPanelProps) {
   const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
+  const [showArtifactRows, setShowArtifactRows] = useState(false);
   const coordinateBounds = coordinateSystem === "center"
     ? { min: -72, max: 72, detail: "Center origin" }
     : { min: 0, max: 144, detail: "Corner origin" };
@@ -151,18 +175,16 @@ export function InputPanel({
           <i />
           <span>{selectedRobot?.description}</span>
         </div>
-        <div className="config-title start-position-title">
+        <button type="button" className="cad-button" disabled><span>+</span> Import CAD <small>Coming later</small></button>
+      </section>
+
+      <section className="setup-section field-configurator">
+        <div className="config-title">
           <div>
-            <label className="form-label">Start position</label>
+            <label className="form-label">Field configuration</label>
           </div>
         </div>
-        <div className="select-wrap coordinate-system-select">
-          <select value={coordinateSystem} onChange={(event) => setCoordinateSystem(event.target.value as CoordinateSystem)}>
-            <option value="corner">Corner origin - 0,0 at bottom left field corner</option>
-            <option value="center">Center origin - 0,0 at field center</option>
-          </select>
-          <span>v</span>
-        </div>
+        <div className="field-config-subtitle">Start position</div>
         <div className="dimension-controls start-pose-controls">
           <label>
             <span>X</span>
@@ -174,11 +196,57 @@ export function InputPanel({
           </label>
           <label>
             <span>Heading</span>
-            <NumberDraftInput ariaLabel="Robot start heading" min={-180} max={180} value={startHeading} unit="deg" onCommit={setStartHeading} />
+            <NumberDraftInput ariaLabel="Robot start heading" min={0} max={360} value={startHeading} unit="deg" onCommit={setStartHeading} />
           </label>
         </div>
         <p className="dimension-note"><span>{coordinateBounds.detail}</span> coordinates shown in inches.</p>
-        <button type="button" className="cad-button" disabled><span>+</span> Import CAD <small>Coming later</small></button>
+
+        <div className="field-config-subtitle">Coordinate system</div>
+        <div className="select-wrap coordinate-system-select">
+          <select value={coordinateSystem} onChange={(event) => setCoordinateSystem(event.target.value as CoordinateSystem)}>
+            <option value="corner">Corner origin - 0,0 at bottom left field corner</option>
+            <option value="center">Center origin - 0,0 at field center</option>
+          </select>
+          <span>v</span>
+        </div>
+        <div className="field-config-subtitle">Add preload</div>
+        <div className="preload-control">
+          <span>Artifacts in robot</span>
+          <div className="select-wrap preload-select">
+            <select value={preloadCount} onChange={(event) => setPreloadCount(Number(event.target.value))}>
+              <option value={0}>0</option>
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+            </select>
+            <span>v</span>
+          </div>
+        </div>
+        <div className="field-config-subtitle artifact-subtitle">Artifact rows <b>{selectedArtifactRows.length}/{artifactRowOptions.length}</b></div>
+        <button type="button" className="artifact-row-toggle" onClick={() => setShowArtifactRows((open) => !open)}>
+          <span>{showArtifactRows ? "Hide row selector" : "Configure artifact rows"}</span>
+          <b>{showArtifactRows ? "-" : "+"}</b>
+        </button>
+        {showArtifactRows && (
+          <div className="artifact-row-menu">
+            {artifactRowOptions.map((option) => (
+              <label key={option.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedArtifactRows.includes(option.id)}
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      setSelectedArtifactRows([...selectedArtifactRows, option.id]);
+                      return;
+                    }
+                    setSelectedArtifactRows(selectedArtifactRows.filter((id) => id !== option.id));
+                  }}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="input-actions">
@@ -186,10 +254,17 @@ export function InputPanel({
           <span>{running ? "■" : "▶"}</span>
           {running ? "Simulation running..." : "Run simulation"}
         </button>
+        {running && (
+          <button className="button analyze-button" type="button" onClick={onStop}>
+            <span>■</span>
+            Stop simulation
+          </button>
+        )}
         <button className="button analyze-button" disabled={!canAnalyze || running} onClick={onAnalyze}>
           <span>*</span>
           Feedback placeholder
         </button>
+        {setupWarning && <p className="action-warning">{setupWarning}</p>}
         {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock the feedback placeholder.</p>}
       </div>
     </aside>

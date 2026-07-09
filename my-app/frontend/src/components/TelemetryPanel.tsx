@@ -142,7 +142,7 @@ export function TelemetryPanel({ frame, events, progress, coordinateSystem }: { 
       intake: {
         label: "Intake",
         value: frame.intake === "in" ? "Collecting" : frame.intake === "out" ? "Reversed" : "Off",
-        detail: "Roller direction",
+        detail: `${frame.artifactCount}/3 artifacts stored`,
         accent: frame.intake === "out" ? "warn" : "",
       },
     }[id];

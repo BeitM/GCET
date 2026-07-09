@@ -111,14 +111,7 @@ function TurretAssembly({ frame, running }: { frame: TelemetryFrame; running: bo
   const hood = useRef<THREE.Group>(null);
 
   useFrame((_, delta) => {
-    if (turret.current && running) {
-      const target = -THREE.MathUtils.degToRad(frame.heading);
-      const difference = Math.atan2(
-        Math.sin(target - turret.current.rotation.y),
-        Math.cos(target - turret.current.rotation.y),
-      );
-      turret.current.rotation.y += difference * (1 - Math.exp(-delta * 7));
-    }
+    if (turret.current) turret.current.rotation.y = 0;
 
     if (flywheel.current && running) {
       flywheel.current.rotation.x += frame.shooterRpm * (Math.PI * 2 / 60) * delta;

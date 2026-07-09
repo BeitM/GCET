@@ -1,6 +1,6 @@
 import { FieldScene3D } from "@/components/FieldScene3D";
 import { fieldSeasons } from "@/lib/seasons";
-import { CoordinateSystem, TelemetryFrame } from "@/lib/types";
+import { ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { RobotPresetId } from "@/lib/robots";
 
 type FieldSimulatorProps = {
@@ -11,11 +11,16 @@ type FieldSimulatorProps = {
   robotLength: number;
   robotId: RobotPresetId;
   coordinateSystem: CoordinateSystem;
+  selectedArtifactRows: ArtifactRowId[];
+  recordingPhysics: boolean;
   shootSignal?: number;
+  ballResetSignal: number;
   showPlayback: boolean;
   frameIndex: number;
   totalFrames: number;
   duration: number;
+  onPhysicsArtifacts: (frameIndex: number, artifacts: NonNullable<TelemetryFrame["artifacts"]>) => void;
+  onPhysicsShots: (frameIndex: number, shots: ShotPhysicsState[]) => void;
   onSeek: (index: number) => void;
   onTogglePlayback: () => void;
 };
@@ -28,11 +33,16 @@ export function FieldSimulator({
   robotLength,
   robotId,
   coordinateSystem,
+  selectedArtifactRows,
+  recordingPhysics,
   shootSignal,
+  ballResetSignal,
   showPlayback,
   frameIndex,
   totalFrames,
   duration,
+  onPhysicsArtifacts,
+  onPhysicsShots,
   onSeek,
   onTogglePlayback,
 }: FieldSimulatorProps) {
@@ -67,8 +77,14 @@ export function FieldSimulator({
           robotLength={robotLength}
           robotId={robotId}
           coordinateSystem={coordinateSystem}
+          selectedArtifactRows={selectedArtifactRows}
           running={running}
+          recordingPhysics={recordingPhysics}
           shootSignal={shootSignal}
+          ballResetSignal={ballResetSignal}
+          frameIndex={frameIndex}
+          onPhysicsArtifacts={onPhysicsArtifacts}
+          onPhysicsShots={onPhysicsShots}
         />
         {showPlayback && (
           <div className="simulation-playback">
