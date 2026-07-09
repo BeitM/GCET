@@ -10,7 +10,7 @@ export default function CoachDashboard() {
         <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-blue-900">FTC Coach Dashboard</h1>
-            <p className="text-blue-600 mt-1">Manage your FTC team's training sessions and robot development</p>
+            <p className="text-blue-600 mt-1">Manage your FTC team&apos;s training sessions and robot development</p>
           </div>
           <Link href="/">
             <button className="bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold py-2 px-4 rounded-lg transition-colors">

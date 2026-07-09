@@ -10,6 +10,7 @@ type FieldSimulatorProps = {
   robotWidth: number;
   robotLength: number;
   robotId: RobotPresetId;
+  shootSignal?: number;
   showPlayback: boolean;
   frameIndex: number;
   totalFrames: number;
@@ -25,6 +26,7 @@ export function FieldSimulator({
   robotWidth,
   robotLength,
   robotId,
+  shootSignal,
   showPlayback,
   frameIndex,
   totalFrames,
@@ -63,6 +65,7 @@ export function FieldSimulator({
           robotLength={robotLength}
           robotId={robotId}
           running={running}
+          shootSignal={shootSignal}
         />
         {showPlayback && (
           <div className="simulation-playback">
