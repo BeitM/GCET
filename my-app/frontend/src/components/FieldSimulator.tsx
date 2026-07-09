@@ -1,6 +1,7 @@
 import { FieldScene3D } from "@/components/FieldScene3D";
 import { fieldSeasons } from "@/lib/seasons";
 import { TelemetryFrame } from "@/lib/types";
+import { RobotPresetId } from "@/lib/robots";
 
 type FieldSimulatorProps = {
   frame: TelemetryFrame;
@@ -8,6 +9,7 @@ type FieldSimulatorProps = {
   running: boolean;
   robotWidth: number;
   robotLength: number;
+  robotId: RobotPresetId;
   showPlayback: boolean;
   frameIndex: number;
   totalFrames: number;
@@ -22,6 +24,7 @@ export function FieldSimulator({
   running,
   robotWidth,
   robotLength,
+  robotId,
   showPlayback,
   frameIndex,
   totalFrames,
@@ -58,6 +61,8 @@ export function FieldSimulator({
           trail={trail}
           robotWidth={robotWidth}
           robotLength={robotLength}
+          robotId={robotId}
+          running={running}
         />
         {showPlayback && (
           <div className="simulation-playback">

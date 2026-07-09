@@ -6,6 +6,8 @@ import { CuboidCollider, Physics, RigidBody, RapierRigidBody } from "@react-thre
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { TelemetryFrame } from "@/lib/types";
+import { ShooterRobotModel } from "@/components/ShooterRobotModel";
+import { RobotPresetId } from "@/lib/robots";
 
 const INCHES_TO_METERS = 0.0254;
 const FIELD_INCHES = 144;
@@ -16,6 +18,8 @@ type FieldScene3DProps = {
   trail: TelemetryFrame[];
   robotWidth: number;
   robotLength: number;
+  robotId: RobotPresetId;
+  running: boolean;
 };
 
 function fieldPosition(x: number, y: number): [number, number, number] {
@@ -150,7 +154,7 @@ function FieldBounds() {
   );
 }
 
-function Robot({ frame, width, length }: { frame: TelemetryFrame; width: number; length: number }) {
+function Robot({ frame, width, length, running }: { frame: TelemetryFrame; width: number; length: number; running: boolean }) {
   const body = useRef<RapierRigidBody>(null);
   const widthMeters = width * INCHES_TO_METERS;
   const lengthMeters = length * INCHES_TO_METERS;
@@ -165,21 +169,8 @@ function Robot({ frame, width, length }: { frame: TelemetryFrame; width: number;
 
   return (
     <RigidBody ref={body} type="kinematicPosition" colliders={false} position={[position[0], 0.12, position[2]]} canSleep={false}>
-      <CuboidCollider args={[widthMeters / 2, 0.1, lengthMeters / 2]} friction={1.2} />
-      <mesh castShadow>
-        <boxGeometry args={[widthMeters, 0.2, lengthMeters]} />
-        <meshStandardMaterial color="#123c42" emissive="#16b8b2" emissiveIntensity={0.25} metalness={0.5} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, 0.112, -lengthMeters * 0.22]} rotation={[-Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[Math.min(widthMeters, lengthMeters) * 0.16, 0.2, 3]} />
-        <meshStandardMaterial color="#d9fffd" emissive="#25e0da" emissiveIntensity={0.5} />
-      </mesh>
-      {[-1, 1].flatMap((side) => [-1, 1].map((end) => (
-        <mesh key={`${side}-${end}`} position={[side * (widthMeters / 2 + 0.025), -0.015, end * lengthMeters * 0.3]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.07, 0.07, 0.05, 20]} />
-          <meshStandardMaterial color="#687781" roughness={0.75} />
-        </mesh>
-      )))}
+      <CuboidCollider args={[widthMeters / 2, 0.2, lengthMeters / 2]} position={[0, 0.08, 0]} friction={1.2} />
+      <ShooterRobotModel frame={frame} width={widthMeters} length={lengthMeters} running={running} />
     </RigidBody>
   );
 }
@@ -203,7 +194,7 @@ function Scene(props: FieldScene3DProps) {
       <DecodeFieldModel />
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
         <FieldBounds />
-        <Robot key={`${props.robotWidth}-${props.robotLength}`} frame={props.frame} width={props.robotWidth} length={props.robotLength} />
+        <Robot key={`${props.robotId}-${props.robotWidth}-${props.robotLength}`} frame={props.frame} width={props.robotWidth} length={props.robotLength} running={props.running} />
       </Physics>
       <RobotTrail trail={props.trail} />
       <OrbitControls makeDefault target={[0, 0, 0]} minDistance={3.2} maxDistance={8} minPolarAngle={0.3} maxPolarAngle={Math.PI / 2.1} enableDamping />
