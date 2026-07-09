@@ -6,7 +6,7 @@ const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 export function generateFrames(id:ScenarioId):TelemetryFrame[]{
   const frames:TelemetryFrame[]=[];
   for(let i=0;i<=60;i++){
-    const p=i/60,time=p*(id==="inefficient"?12:id==="drift"?10:id==="shooter"||id==="arm"?8:7); let s={...base}; let event=""; let warning="";
+    const p=i/60,time=p*(id==="inefficient"?12:id==="drift"?10:id==="shooter"||id==="arm"?8:7); const s={...base}; let event=""; let warning="";
     if(id==="drift") { s.x=lerp(20,83,p);s.y=122-19*p*p;s.heading=13.8*p*p;s.leftPower=p<.94?.7:0;s.rightPower=p<.94?.7:0;s.leftEncoder=2760*p;s.rightEncoder=2500*p;if(i===48)warning="Heading error > 8°"; }
     if(id==="shooter") { s.x=lerp(20,72,Math.min(1,p*2));s.y=lerp(122,86,Math.min(1,p*2));s.leftPower=p<.5?.45:0;s.rightPower=p<.5?.45:0;s.shooterTarget=3600;s.shooterRpm=Math.min(3600,3900*(1-Math.exp(-3.2*p)));s.feeder=p>.35&&p<.43;if(i===21){event="Feeder activated";warning="Shooter below target"} }
     if(id==="arm") { s.armTarget=1250;s.armPosition=p<.58?lerp(0,1486,p/.58):lerp(1486,1285,(p-.58)/.42);if(s.armPosition>1400)warning="Arm above safe range";if(i===35)event="Peak arm position"; }

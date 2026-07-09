@@ -2,7 +2,7 @@
 
 import { Line, OrbitControls, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { CuboidCollider, Physics, RigidBody, RapierRigidBody } from "@react-three/rapier";
+import { BallCollider, CuboidCollider, Physics, RigidBody, RapierRigidBody } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { TelemetryFrame } from "@/lib/types";
@@ -16,6 +16,7 @@ type FieldScene3DProps = {
   trail: TelemetryFrame[];
   robotWidth: number;
   robotLength: number;
+  shootSignal?: number;
 };
 
 function fieldPosition(x: number, y: number): [number, number, number] {
@@ -70,7 +71,11 @@ function DecodeFieldModel() {
     });
   }, [model]);
 
-  return <primitive object={model} position={[0, 0.031, 0]} rotation={[0, Math.PI, 0]} />;
+  return (
+    <RigidBody type="fixed" colliders="trimesh" position={[0, 0.031, 0]} rotation={[0, Math.PI, 0]}>
+      <primitive object={model} />
+    </RigidBody>
+  );
 }
 
 function FieldMarkings() {
@@ -192,6 +197,29 @@ function RobotTrail({ trail }: { trail: TelemetryFrame[] }) {
   return points.length > 1 ? <Line points={points} color="#25e0da" lineWidth={2} transparent opacity={0.75} /> : null;
 }
 
+function PhysicsBall({ shootSignal = -1 }: { shootSignal?: number }) {
+  const body = useRef<RapierRigidBody>(null);
+  const lastShot = useRef(shootSignal);
+  const radius = 0.0635;
+
+  useEffect(() => {
+    if (shootSignal < 0 || shootSignal === lastShot.current || !body.current) return;
+    lastShot.current = shootSignal;
+    body.current.wakeUp();
+    body.current.setLinvel({ x: 0, y: 5, z: -10 }, true);
+  }, [shootSignal]);
+
+  return (
+    <RigidBody ref={body} type="dynamic" colliders={false} position={[0, 0.45, 0.95]} mass={0.17} friction={0.8} restitution={0.35} canSleep={false}>
+      <BallCollider args={[radius]} />
+      <mesh castShadow receiveShadow>
+        <sphereGeometry args={[radius, 32, 24]} />
+        <meshStandardMaterial color="#7d5cff" roughness={0.42} metalness={0.05} />
+      </mesh>
+    </RigidBody>
+  );
+}
+
 function Scene(props: FieldScene3DProps) {
   return (
     <>
@@ -200,10 +228,11 @@ function Scene(props: FieldScene3DProps) {
       <hemisphereLight args={["#dcecff", "#26313a", 1.8]} />
       <directionalLight position={[3.5, 6, 3]} intensity={2.4} castShadow shadow-mapSize={[2048, 2048]} />
       <directionalLight position={[-4, 3.5, -3]} intensity={1.2} color="#d8e7ff" />
-      <DecodeFieldModel />
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
+        <DecodeFieldModel />
         <FieldBounds />
         <Robot key={`${props.robotWidth}-${props.robotLength}`} frame={props.frame} width={props.robotWidth} length={props.robotLength} />
+        <PhysicsBall shootSignal={props.shootSignal} />
       </Physics>
       <RobotTrail trail={props.trail} />
       <OrbitControls makeDefault target={[0, 0, 0]} minDistance={3.2} maxDistance={8} minPolarAngle={0.3} maxPolarAngle={Math.PI / 2.1} enableDamping />

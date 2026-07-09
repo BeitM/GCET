@@ -8,7 +8,7 @@ export const scenarios: DemoScenario[] = [
   { id:"shooter", label:"ARTIFACT launches before target RPM", category:"LAUNCHER", summary:"The feeder releases an ARTIFACT while the flywheel is still accelerating.", duration:8,
     goal:"Drive into a legal DECODE LAUNCH ZONE, spin the launcher to 3,600 RPM, then feed one ARTIFACT only after the flywheel is stable.",
     setup:"DECODE field • Preset RL-01 • Dual flywheel launcher • Target: 3,600 RPM • Single feeder servo",
-    code:`shooter.setTargetRPM(3600);\nwait(0.55); // fixed delay\nfeeder.push();\nwait(0.25);\nfeeder.reset();`, },
+    code:`move_forward();\nmove_left();\nshoot();`, },
   { id:"arm", label:"Arm overshoots target position", category:"ARM / LIFT", summary:"Open-loop power carries the arm past its target.", duration:8,
     goal:"Raise the arm smoothly to 1,250 encoder ticks without exceeding the 1,400 tick safe range.",
     setup:"Preset RL-01 • 20:1 arm reduction • Encoder feedback • Safe max: 1,400 ticks",
