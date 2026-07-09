@@ -11,7 +11,7 @@ export function AIFeedbackPanel({ data, goal }: { data: AIFeedback | null; goal:
         <div className="ai-orb">*</div>
         <span className="kicker">AI MENTOR</span>
         <h2>Ready when you are.</h2>
-        <p>Run the robot code, then use the placeholder feedback action while the AI integration is being built.</p>
+        <p>Run the robot code, then request AI feedback to analyze the latest telemetry.</p>
       </section>
     );
   }
@@ -46,10 +46,10 @@ ${data.optimization}`;
     <section className="ai-panel panel">
       <div className="panel-head">
         <div>
-          <span className="kicker">AI MENTOR PLACEHOLDER</span>
+          <span className="kicker">AI MENTOR</span>
           <h2>{data.headline}</h2>
         </div>
-        <span className={`analysis-status ${data.status}`}>{data.status === "warning" ? "ACTION NEEDED" : "PLACEHOLDER"}</span>
+        <span className={`analysis-status ${data.status}`}>{data.status === "warning" ? "ACTION NEEDED" : "ANALYSIS READY"}</span>
       </div>
       <div className="feedback-lead"><span>WHAT HAPPENED</span><p>{data.happened}</p></div>
       <div className="feedback-grid">

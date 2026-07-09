@@ -22,6 +22,7 @@ type InputPanelProps = {
   onStop: () => void;
   running: boolean;
   onAnalyze: () => void;
+  analyzing: boolean;
   canAnalyze: boolean;
   robotId: RobotPresetId;
   onRobot: (id: RobotPresetId) => void;
@@ -111,6 +112,7 @@ export function InputPanel({
   onStop,
   running,
   onAnalyze,
+  analyzing,
   canAnalyze,
   robotId,
   onRobot,
@@ -260,12 +262,12 @@ export function InputPanel({
             Stop simulation
           </button>
         )}
-        <button className="button analyze-button" disabled={!canAnalyze || running} onClick={onAnalyze}>
+        <button className="button analyze-button" disabled={!canAnalyze || running || analyzing} onClick={onAnalyze}>
           <span>*</span>
-          Feedback placeholder
+          {analyzing ? "Analyzing run..." : "Get AI feedback"}
         </button>
         {setupWarning && <p className="action-warning">{setupWarning}</p>}
-        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock the feedback placeholder.</p>}
+        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock AI feedback.</p>}
       </div>
     </aside>
   );

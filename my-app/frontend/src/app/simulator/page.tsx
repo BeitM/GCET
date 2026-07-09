@@ -540,15 +540,20 @@ function generateRobotCodeFrames(
 
 const THREE_DEGREES_TO_RADIANS = Math.PI / 180;
 
-const placeholderFeedback: AIFeedback = {
-  headline: "AI feedback placeholder",
-  status: "complete",
-  happened: "The robot code ran in the simulator and produced telemetry, but AI analysis is not connected yet.",
-  cause: "This button is reserved for the future analysis pipeline that will compare robot intent, code, and telemetry.",
-  evidence: ["Telemetry frames were generated locally", "No external AI model was called", "Local robot-code parsing is active"],
-  fix: "Keep using the run controls to validate simulated movement while the feedback integration is built.",
-  optimization: "Future versions can replace this placeholder with model-generated debugging guidance.",
-  concept: "The simulator and analysis layers are intentionally separate so robot behavior can mature before AI feedback is wired in.",
+const isAIFeedback = (value: unknown): value is AIFeedback => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AIFeedback>;
+  return Boolean(
+    typeof candidate.headline === "string"
+    && (candidate.status === "warning" || candidate.status === "complete")
+    && typeof candidate.happened === "string"
+    && typeof candidate.cause === "string"
+    && Array.isArray(candidate.evidence)
+    && candidate.evidence.every((item) => typeof item === "string")
+    && typeof candidate.fix === "string"
+    && typeof candidate.optimization === "string"
+    && typeof candidate.concept === "string",
+  );
 };
 
 export default function SimulatorDashboard() {
@@ -570,6 +575,7 @@ export default function SimulatorDashboard() {
   const [runId, setRunId] = useState(0);
   const [playbackId, setPlaybackId] = useState(0);
   const [analysis, setAnalysis] = useState<AIFeedback | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const [setupWarning, setSetupWarning] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const physicsRecordingFrames = useRef<TelemetryFrame[] | null>(null);
@@ -758,9 +764,74 @@ export default function SimulatorDashboard() {
     setIndex(nextIndex);
   };
 
-  const showFeedbackPlaceholder = () => {
-    setAnalysis(placeholderFeedback);
-    setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  const requestAIFeedback = () => {
+    if (running || !hasRun || analyzing) return;
+
+    const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
+    if (!selectedRobot) {
+      setSetupWarning("Robot configuration is missing");
+      return;
+    }
+
+    const runAnalysis = async () => {
+      setAnalyzing(true);
+      setSetupWarning("");
+
+      try {
+        const recentFrames = frames.slice(-180);
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            goal,
+            code,
+            robotSetup: {
+              robotId,
+              robotName: selectedRobot.name,
+              width: selectedRobot.width,
+              length: selectedRobot.length,
+              coordinateSystem,
+              startPose: { x: startX, y: startY, heading: startHeading },
+              preloadCount,
+              selectedArtifactRows,
+            },
+            telemetry: recentFrames,
+          }),
+        });
+
+        const result: unknown = await response.json();
+
+        if (!response.ok) {
+          const message = typeof result === "object" && result && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "AI analysis request failed.";
+          throw new Error(message);
+        }
+
+        if (!isAIFeedback(result)) {
+          throw new Error("AI response format was invalid.");
+        }
+
+        setAnalysis(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        setAnalysis({
+          headline: "AI analysis unavailable",
+          status: "warning",
+          happened: "The simulator generated telemetry, but the AI service could not return a valid analysis.",
+          cause: message,
+          evidence: ["Goal, code, robot setup, and recent telemetry were prepared", "No usable AI feedback object was returned"],
+          fix: "Check OPENAI_API_KEY and OPENAI_MODEL configuration, then retry analysis.",
+          optimization: "Reduce prompt size by shortening code or telemetry if provider limits are hit.",
+          concept: "The analyzer requires a live model endpoint and a valid structured JSON response.",
+        });
+      } finally {
+        setAnalyzing(false);
+        setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+      }
+    };
+
+    void runAnalysis();
   };
 
   const shootSignal = frame.shot ? (runId + 1) * 1000000 + playbackId * 10000 + frame.shot.id : -1;
@@ -798,7 +869,8 @@ export default function SimulatorDashboard() {
           onRobot={selectRobot}
           onRun={run}
           onStop={stopSimulation}
-          onAnalyze={showFeedbackPlaceholder}
+          onAnalyze={requestAIFeedback}
+          analyzing={analyzing}
           canAnalyze={hasRun}
         />
         <div className="workspace">
