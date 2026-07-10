@@ -528,17 +528,23 @@ function DynamicShotBody({
 }
 
 function DynamicShotsRecorder({
+  frame,
   trail,
+  robotWidth,
   robotLength,
   frameIndex,
   resetSignal,
   onRecord,
+  onCollect,
 }: {
   trail: TelemetryFrame[];
   robotLength: number;
+  robotWidth: number;
+  frame: TelemetryFrame;
   frameIndex: number;
   resetSignal: number;
   onRecord: (frameIndex: number, shots: ShotPhysicsState[]) => void;
+  onCollect: (frameIndex: number, artifactIds: string[]) => void;
 }) {
   const shotFrames = useMemo(() => {
     const byId = new Map<number, TelemetryFrame>();
@@ -551,6 +557,15 @@ function DynamicShotsRecorder({
   const returnedShots = useRef<Set<number>>(new Set());
 
   useFrame(() => {
+    const [robotX, , robotZ] = fieldPosition(frame.x, frame.y);
+    const headingRadians = THREE.MathUtils.degToRad(frame.heading);
+    const intakeForward = { x: Math.cos(headingRadians), z: -Math.sin(headingRadians) };
+    const intakeRight = { x: Math.sin(headingRadians), z: Math.cos(headingRadians) };
+    const frontMin = robotLength * INCHES_TO_METERS / 2 - ARTIFACT_RADIUS * 1.35;
+    const frontMax = robotLength * INCHES_TO_METERS / 2 + ARTIFACT_RADIUS * 2.75;
+    const sideLimit = robotWidth * INCHES_TO_METERS / 2 + ARTIFACT_RADIUS * 1.25;
+    const canCollect = frame.intake === "in" && frame.artifactCount < 3;
+
     const recorded = shotFrames.flatMap((shotFrame) => {
       const shot = shotFrame.shot;
       if (!shot) return [];
@@ -561,6 +576,18 @@ function DynamicShotsRecorder({
       const translation = body.translation();
       const rotation = body.rotation();
       const rollEuler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
+      const dx = translation.x - robotX;
+      const dz = translation.z - robotZ;
+      const localForward = dx * intakeForward.x + dz * intakeForward.z;
+      const localRight = dx * intakeRight.x + dz * intakeRight.z;
+      const insideIntake = localForward >= frontMin && localForward <= frontMax && Math.abs(localRight) <= sideLimit && translation.y < 0.18;
+
+      if (canCollect && insideIntake) {
+        returnedShots.current.add(shot.id);
+        retireBody(body);
+        onCollect(frameIndex, [`shot-${shot.id}`]);
+        return [];
+      }
 
       if (translation.y <= SHOT_RETURN_Y) {
         returnedShots.current.add(shot.id);
@@ -762,11 +789,14 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
               onCollect={props.onPhysicsArtifactCollected}
             />
             <DynamicShotsRecorder
+              frame={props.frame}
               trail={props.trail}
               robotLength={props.robotLength}
+              robotWidth={props.robotWidth}
               frameIndex={props.frameIndex}
               resetSignal={props.ballResetSignal}
               onRecord={props.onPhysicsShots}
+              onCollect={props.onPhysicsArtifactCollected}
             />
           </>
         )}
@@ -780,7 +810,7 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
       {!props.recordingPhysics && <RecordedShotArtifacts frame={props.frame} />}
       {!props.running && props.frame.time === 0 && <ArtifactSetupMarkers selectedRows={props.selectedArtifactRows} />}
       {props.showReference && <FieldReference3D coordinateSystem={props.coordinateSystem} />}
-      <RobotTrail trail={props.trail} />
+      {props.trail.length > 0 && <RobotTrail trail={props.trail} />}
       <MouseCoordinateTracker enabled={props.showReference} coordinateSystem={props.coordinateSystem} onChange={props.onMouseCoordinates} />
       <OrbitControls makeDefault target={[0, 0, 0]} minDistance={3.2} maxDistance={8} minPolarAngle={0.3} maxPolarAngle={Math.PI / 2.1} enableDamping />
     </>

@@ -1544,10 +1544,10 @@ export default function SimulatorDashboard() {
   }, [chatMessages, frames, goal]);
 
   useEffect(() => {
-    if (!hasRun || running || frames.length <= 1 || lastAutoAnalysisRun.current === runId) return;
+    if (controlMode !== "autonomous" || !hasRun || running || frames.length <= 1 || lastAutoAnalysisRun.current === runId) return;
     lastAutoAnalysisRun.current = runId;
     void requestAnalysis();
-  }, [frames.length, hasRun, requestAnalysis, runId, running]);
+  }, [controlMode, frames.length, hasRun, requestAnalysis, runId, running]);
 
   useEffect(() => {
     if (controlMode !== "teleop") {
@@ -1634,7 +1634,7 @@ export default function SimulatorDashboard() {
           <div className="field-row">
             <FieldSimulator
               frame={frame}
-              trail={frames.slice(0, index + 1)}
+              trail={controlMode === "teleop" ? [] : frames.slice(0, index + 1)}
               running={running}
               robotId={robotId}
               allianceColor={allianceColor}
