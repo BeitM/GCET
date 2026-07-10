@@ -107,7 +107,10 @@ const sanitizeRequest = (value: unknown): AnalyzeRequest | null => {
   const telemetry = value.telemetry
     .slice(-MAX_TELEMETRY_FRAMES)
     .filter((frame): frame is Record<string, unknown> => isObject(frame))
-    .map((frame) => ({
+    .map((frame) => {
+      const intake: AnalyzeTelemetryFrame["intake"] = frame.intake === "in" ? "in" : frame.intake === "out" ? "out" : "off";
+      const claw: AnalyzeTelemetryFrame["claw"] = frame.claw === "open" ? "open" : "closed";
+      return {
       time: safeNumber(frame.time, 0),
       x: safeNumber(frame.x, 0),
       y: safeNumber(frame.y, 0),
@@ -121,12 +124,13 @@ const sanitizeRequest = (value: unknown): AnalyzeRequest | null => {
       feeder: Boolean(frame.feeder),
       armTarget: safeNumber(frame.armTarget, 0),
       armPosition: safeNumber(frame.armPosition, 0),
-      intake: frame.intake === "in" || frame.intake === "out" ? frame.intake : "off",
-      claw: frame.claw === "open" ? "open" : "closed",
+      intake,
+      claw,
       artifactCount: safeNumber(frame.artifactCount, 0),
       event: typeof frame.event === "string" ? frame.event.slice(0, 120) : undefined,
       warning: typeof frame.warning === "string" ? frame.warning.slice(0, 120) : undefined,
-    }));
+      };
+    });
 
   const robotSetup = value.robotSetup;
   const selectedArtifactRowsRaw = Array.isArray(robotSetup.selectedArtifactRows) ? robotSetup.selectedArtifactRows : [];

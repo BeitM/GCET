@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { ArtifactRowId, CoordinateSystem } from "@/lib/types";
 
@@ -56,27 +56,27 @@ function NumberDraftInput({
   unit: string;
   onCommit: (value: number) => void;
 }) {
-  const [draft, setDraft] = useState(String(Number(value.toFixed(1))));
-
-  useEffect(() => {
-    setDraft(String(Number(value.toFixed(1))));
-  }, [value]);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const displayValue = String(Number(value.toFixed(1)));
 
   const commit = (raw: string) => {
     const trimmed = raw.trim();
     if (trimmed === "") {
       onCommit(0);
       setDraft("0");
+      setEditing(false);
       return;
     }
 
     const next = Number(trimmed);
     if (Number.isFinite(next)) {
       onCommit(Math.min(max, Math.max(min, next)));
+      setEditing(false);
       return;
     }
 
-    setDraft(String(Number(value.toFixed(1))));
+    setEditing(false);
   };
 
   return (
@@ -85,10 +85,15 @@ function NumberDraftInput({
         aria-label={ariaLabel}
         inputMode="decimal"
         type="text"
-        value={draft}
+        value={editing ? draft : displayValue}
+        onFocus={() => {
+          setDraft(displayValue);
+          setEditing(true);
+        }}
         onChange={(event) => {
           const next = event.target.value;
           setDraft(next);
+          setEditing(true);
           if (next.trim() === "" || next === "-" || next === "." || next === "-.") return;
           const parsed = Number(next);
           if (Number.isFinite(parsed)) onCommit(Math.min(max, Math.max(min, parsed)));
