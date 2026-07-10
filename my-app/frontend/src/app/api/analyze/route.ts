@@ -29,6 +29,24 @@ type GoalEvaluation = {
   achieved: boolean;
   summary: string;
   observations: string[];
+  failures: GoalFailure[];
+};
+
+type GoalFailureKind =
+  | "not-enough-preload"
+  | "no-movement"
+  | "not-enough-shots-fired"
+  | "wrong-goal"
+  | "missed-classifier"
+  | "not-enough-scored";
+
+type GoalFailure = {
+  kind: GoalFailureKind;
+  message: string;
+  cause: string;
+  action: string;
+  nextTest: string;
+  optimization: string;
 };
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -121,6 +139,99 @@ function requestedShotCount(goal: string) {
   return /(?:shoot|score|fire|launch)/.test(lower) ? 1 : 0;
 }
 
+function buildGoalFailures({
+  requestedShots,
+  wantsMovement,
+  wantsPreloadShot,
+  moved,
+  preloadAvailable,
+  attemptedEnough,
+  scoredEnough,
+  correctGoal,
+  summary,
+}: {
+  requestedShots: number;
+  wantsMovement: boolean;
+  wantsPreloadShot: boolean;
+  moved: boolean;
+  preloadAvailable: boolean;
+  attemptedEnough: boolean;
+  scoredEnough: boolean;
+  correctGoal: boolean;
+  summary: TelemetrySummary;
+}): GoalFailure[] {
+  const failures: GoalFailure[] = [];
+  const shotWord = requestedShots === 1 ? "shot" : "shots";
+
+  if (!preloadAvailable) {
+    failures.push({
+      kind: "not-enough-preload",
+      message: `The goal needs ${requestedShots} preloaded ${shotWord}, but the robot started with ${summary.artifactCount.preloaded}.`,
+      cause: "The starting preload count does not match the goal, so the robot cannot complete the requested shots without collecting more artifacts.",
+      action: `Set Add preload to at least ${requestedShots}, or add an intake pickup before the extra shot.`,
+      nextTest: `Run a preload-only test with ${requestedShots} stored artifact${requestedShots === 1 ? "" : "s"} and confirm the telemetry starts with that count.`,
+      optimization: "After the preload count is correct, reduce wait/path time only if both shots still score reliably.",
+    });
+  }
+
+  if (wantsMovement && !moved) {
+    failures.push({
+      kind: "no-movement",
+      message: "The goal asked the robot to move, but the recorded path did not show meaningful movement.",
+      cause: "The code did not produce a drive segment before the scoring action, or the target was clamped by the field boundary.",
+      action: "Add or fix a drive command before shooting, such as driveToPosition(x, y, heading), then verify the robot pose changes in telemetry.",
+      nextTest: "Run only the movement command and confirm the position telemetry changes before adding the shooter commands back.",
+      optimization: "Once movement is reliable, shorten the route by reducing unnecessary distance or turns.",
+    });
+  }
+
+  if (!attemptedEnough) {
+    failures.push({
+      kind: "not-enough-shots-fired",
+      message: `The goal asked for ${requestedShots} ${shotWord}, but only ${summary.shotSuccessRate.attempted} fired.`,
+      cause: "The routine ended before enough shoot commands ran, or the robot did not have an artifact available for each requested shot.",
+      action: `Add one shoot(angle) command for each intended shot and make sure artifact count is at least ${requestedShots} before those commands run.`,
+      nextTest: `Run a shot-count test and confirm telemetry reports ${requestedShots}/${requestedShots} attempted shots before judging accuracy.`,
+      optimization: "After the shot count is correct, tune spacing between shots so the flywheel recovers without wasting time.",
+    });
+  }
+
+  if (!correctGoal) {
+    failures.push({
+      kind: "wrong-goal",
+      message: `${summary.score.wrongGoalShots} shot${summary.score.wrongGoalShots === 1 ? "" : "s"} crossed the wrong-alliance classifier.`,
+      cause: "The robot was aimed at, or traveled toward, the opponent goal for the selected alliance color.",
+      action: "Check alliance color, target coordinates, and final heading so the shot exits toward the correct alliance goal.",
+      nextTest: "Turn on field reference and run a single shot while watching which classifier records the crossing.",
+      optimization: "After the heading is correct, store that pose as a repeatable shooting waypoint.",
+    });
+  }
+
+  if (attemptedEnough && summary.shotSuccessRate.attempted > summary.score.shotsMade) {
+    failures.push({
+      kind: "missed-classifier",
+      message: `${summary.shotSuccessRate.attempted - summary.score.shotsMade} fired shot${summary.shotSuccessRate.attempted - summary.score.shotsMade === 1 ? "" : "s"} did not become classified score events.`,
+      cause: "At least one artifact was fired, but the recorded physics did not show it crossing the correct classifier square.",
+      action: "Tune the shooting pose, robot heading, shot angle, or flywheel timing before adding more path complexity.",
+      nextTest: "Run one isolated shot from the same pose and verify whether the classifier event appears.",
+      optimization: "Once the shot crosses reliably, shorten the approach path or combine the shot with a pickup route.",
+    });
+  }
+
+  if (!scoredEnough && attemptedEnough && summary.score.shotsMade > 0) {
+    failures.push({
+      kind: "not-enough-scored",
+      message: `The robot scored ${summary.score.shotsMade}/${requestedShots} requested shots.`,
+      cause: "The routine partially met the goal, but not enough fired artifacts became valid classifier scores.",
+      action: "Keep the successful shot path as the baseline, then add or tune one additional shot at a time.",
+      nextTest: "Duplicate the successful shot sequence once and verify the second score event before adding new movement.",
+      optimization: "After both scores work, reduce cycle time by keeping the flywheel near target between shots.",
+    });
+  }
+
+  return failures;
+}
+
 function evaluateGoal(goal: string, summary: TelemetrySummary): GoalEvaluation {
   const normalizedGoal = goal.trim() || "Improve DECODE performance.";
   const lower = normalizedGoal.toLowerCase();
@@ -134,6 +245,17 @@ function evaluateGoal(goal: string, summary: TelemetrySummary): GoalEvaluation {
   const movementSatisfied = !wantsMovement || moved;
   const correctGoal = summary.score.wrongGoalShots === 0;
   const achieved = attemptedEnough && scoredEnough && preloadAvailable && movementSatisfied && correctGoal;
+  const failures = buildGoalFailures({
+    requestedShots,
+    wantsMovement,
+    wantsPreloadShot,
+    moved,
+    preloadAvailable,
+    attemptedEnough,
+    scoredEnough,
+    correctGoal,
+    summary,
+  });
 
   const observations = [
     movementSatisfied
@@ -156,8 +278,9 @@ function evaluateGoal(goal: string, summary: TelemetrySummary): GoalEvaluation {
     achieved,
     summary: achieved
       ? `Goal met: the run ${wantsMovement ? "moved, " : ""}fired ${summary.shotSuccessRate.attempted} artifact${summary.shotSuccessRate.attempted === 1 ? "" : "s"}, and scored ${summary.score.shotsMade}/${Math.max(1, requestedShots)} requested shot${Math.max(1, requestedShots) === 1 ? "" : "s"}.`
-      : `Goal not met: ${observations.filter((item) => item.includes("but") || item.includes("wrong-alliance")).join(" ") || "the recorded score did not match the intended objective."}`,
+      : `Goal not met: ${failures[0]?.message || observations.filter((item) => item.includes("but") || item.includes("wrong-alliance")).join(" ") || "the recorded score did not match the intended objective."}`,
     observations,
+    failures,
   };
 }
 
@@ -220,6 +343,7 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
   const goalEvaluation = evaluateGoal(goal, summary);
   const status: AIFeedback["status"] = hasViolation || !goalEvaluation.achieved || (hasShotData && summary.shotSuccessRate.percent < 70) || !rpmReady ? "warning" : "complete";
   const topViolation = violations[0];
+  const primaryFailure = goalEvaluation.failures[0];
 
   const summaryMarkdown = [
     `**Intended goal:** ${goalEvaluation.intendedGoal}`,
@@ -234,9 +358,9 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
   ].join("\n");
   const nextTest = goalEvaluation.achieved
     ? "Run the same routine 3-5 times from the same start pose and confirm it still scores 1/1."
-    : hasShotData
+    : primaryFailure?.nextTest || (hasShotData
       ? "Replay the run and watch the shot at the classifier. Confirm whether it missed the square, crossed the wrong goal, or fired before alignment."
-      : "Run a short test that only spins the flywheel and shoots the preload, then add movement back after the shot is visible.";
+      : "Run a short test that only spins the flywheel and shoots the preload, then add movement back after the shot is visible.");
 
   return {
     headline: goalEvaluation.achieved
@@ -250,9 +374,10 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
         ? "The recorded classifier event confirms the shot entered the correct alliance classifier. The flywheel was at target speed when the shot fired."
         : !rpmReady
           ? "The shooter fed before the flywheel reached the target RPM tolerance needed for a reliable DECODE trajectory."
-          : "The recorded classifier and shot events did not satisfy the intended goal.",
+          : primaryFailure?.cause || "The recorded classifier and shot events did not satisfy the intended goal.",
     evidence: [
       `Intended goal: ${goalEvaluation.intendedGoal}`,
+      ...goalEvaluation.failures.map((failure) => failure.message),
       ...goalEvaluation.observations,
       `Recorded score ${summary.score.totalPoints} points: ${summary.score.classifiedShots} classified, ${summary.score.overflowShots} overflow, ${summary.score.wrongGoalShots} wrong-goal.`,
       `Classifier shot success ${summary.shotSuccessRate.successful}/${summary.shotSuccessRate.attempted} (${summary.shotSuccessRate.percent}%).`,
@@ -265,14 +390,14 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
       ? "Adjust the start pose, drive target, or artifact-control sequence so the robot footprint stays inside the field and controls no more than 3 artifacts."
       : goalEvaluation.achieved
         ? "No fix is required for this goal. Keep this run as a baseline, then repeat it several times to check consistency."
-      : hasShotData && summary.shotSuccessRate.percent < 70
-        ? "Add a wait after spinFlywheel, keep shot angles between 32 and 58 degrees, and fire only when actual RPM is within 8% of target."
-        : "Make the smallest code change that directly targets the failed part of the goal: movement, shot timing, or classifier alignment.",
+        : primaryFailure?.action || (hasShotData && summary.shotSuccessRate.percent < 70
+          ? "Add a wait after spinFlywheel, keep shot angles between 32 and 58 degrees, and fire only when actual RPM is within 8% of target."
+          : "Make the smallest code change that directly targets the failed part of the goal: movement, shot timing, or classifier alignment."),
     optimization: question
       ? `For the question "${question}", the highest leverage answer is to compare shot timing against RPM readiness before changing the path.`
       : goalEvaluation.achieved
         ? "After this goal is repeatable, try shortening the drive path or adding a second artifact cycle."
-        : "Once the failed part is fixed, optimize by reducing wait time or path distance without lowering shot reliability.",
+        : primaryFailure?.optimization || "Once the failed part is fixed, optimize by reducing wait time or path distance without lowering shot reliability.",
     concept: "The AI checks the intended goal against recorded physics playback. A shoot command is only considered successful when a classifier score event appears.",
     nextTest,
     summaryMarkdown,
