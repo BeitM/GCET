@@ -297,6 +297,15 @@ function summarizeFrames(frames: TelemetryFrame[]): TelemetrySummary {
   const maxSpeed = velocitySamples.length ? Math.max(...velocitySamples) : 0;
   const warnings = Array.from(new Set(frames.map((frame) => frame.warning).filter(Boolean) as string[]));
   const notableEvents = Array.from(new Set(frames.map((frame) => frame.event).filter(Boolean) as string[])).slice(-12);
+  // The autonomous preview is generated before live physics. A live intake can
+  // later convert a preview-only unloaded-shot warning into a real shot, so the
+  // frame warning is the authority for whether that violation still applies.
+  const hasUnloadedShotWarning = frames.some((frame) => frame.warning === "No artifact loaded to shoot");
+  const ruleViolations = (telemetry?.ruleViolations || []).filter((violation) => (
+    violation.code !== "CONTROL_LIMIT"
+      || violation.message !== "Shoot command ran without a loaded artifact."
+      || hasUnloadedShotWarning
+  ));
   const driveDistance = frames.reduce((distance, frame, index) => {
     const previous = frames[index - 1];
     if (!previous) return distance;
@@ -322,7 +331,7 @@ function summarizeFrames(frames: TelemetryFrame[]): TelemetrySummary {
       speedVariance: telemetry?.robotVelocity.speedVariance || 0,
       averageDrivePower: telemetry?.robotVelocity.averageDrivePower || 0,
     },
-    ruleViolations: telemetry?.ruleViolations || [],
+    ruleViolations,
     warnings,
     notableEvents,
     finalPose: {
@@ -357,7 +366,7 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
     `**Rule flags:** ${violations.length ? violations.map((violation) => violation.code).join(", ") : "none"}`,
   ].join("\n");
   const nextTest = goalEvaluation.achieved
-    ? "Run the same routine 3-5 times from the same start pose and confirm it still scores 1/1."
+    ? `Run the same routine 3-5 times from the same start pose and confirm it still scores ${Math.max(1, goalEvaluation.requestedShots)}/${Math.max(1, goalEvaluation.requestedShots)}.`
     : primaryFailure?.nextTest || (hasShotData
       ? "Replay the run and watch the shot at the classifier. Confirm whether it missed the square, crossed the wrong goal, or fired before alignment."
       : "Run a short test that only spins the flywheel and shoots the preload, then add movement back after the shot is visible.");

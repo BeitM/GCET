@@ -438,6 +438,23 @@ function DynamicArtifactsRecorder({
   );
   const bodies = useRef<Record<string, RapierRigidBody | null>>({});
   const returnedArtifacts = useRef<Set<string>>(new Set());
+  const [retiredArtifactIds, setRetiredArtifactIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    returnedArtifacts.current = new Set();
+    setRetiredArtifactIds(new Set());
+  }, [resetSignal]);
+
+  const retireArtifact = (artifactId: string, body: RapierRigidBody) => {
+    returnedArtifacts.current.add(artifactId);
+    retireBody(body);
+    setRetiredArtifactIds((current) => {
+      if (current.has(artifactId)) return current;
+      const next = new Set(current);
+      next.add(artifactId);
+      return next;
+    });
+  };
 
   useFrame(() => {
     const [robotX, , robotZ] = fieldPosition(frame.x, frame.y);
@@ -475,8 +492,7 @@ function DynamicArtifactsRecorder({
 
       const collectedByIntake = canCollect && insideIntake;
       if (translation.y <= SHOT_RETURN_Y || collectedByIntake) {
-        returnedArtifacts.current.add(artifact.id);
-        retireBody(body);
+        retireArtifact(artifact.id, body);
         if (collectedByIntake) onCollect(frameIndex, [artifact.id]);
         return [];
       }
@@ -497,7 +513,7 @@ function DynamicArtifactsRecorder({
 
   return (
     <group key={resetSignal}>
-      {artifacts.map((artifact) => (
+      {artifacts.filter((artifact) => !retiredArtifactIds.has(artifact.id)).map((artifact) => (
         <DynamicArtifactBody
           key={artifact.id}
           artifact={artifact}
