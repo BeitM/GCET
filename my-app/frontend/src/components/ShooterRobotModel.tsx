@@ -3,28 +3,34 @@
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
-import { TelemetryFrame } from "@/lib/types";
+import { AllianceColor, TelemetryFrame } from "@/lib/types";
 
 type ShooterRobotModelProps = {
   frame: TelemetryFrame;
   width: number;
   length: number;
   running: boolean;
+  allianceColor: AllianceColor;
 };
 
 const aluminum = "#a9b5ba";
 const darkMetal = "#172126";
-const accent = "#2edbd3";
 const motorYellow = "#d9a12e";
+const allianceAccent = {
+  blue: { color: "#527dff", emissive: "#1e397c" },
+  red: { color: "#ff4d5e", emissive: "#7f1722" },
+};
 
 function MecanumModule({
   position,
   rollerDirection,
   power,
+  accentColor,
 }: {
   position: [number, number, number];
   rollerDirection: 1 | -1;
   power: number;
+  accentColor: string;
 }) {
   const wheel = useRef<THREE.Group>(null);
   const radius = 0.05;
@@ -58,7 +64,7 @@ function MecanumModule({
               castShadow
             >
               <capsuleGeometry args={[0.007, 0.025, 4, 8]} />
-              <meshStandardMaterial color={accent} roughness={0.72} />
+              <meshStandardMaterial color={accentColor} roughness={0.72} />
             </mesh>
           );
         })}
@@ -71,10 +77,12 @@ function PoweredRoller({
   position,
   radius,
   active,
+  accentColor,
 }: {
   position: [number, number, number];
   radius: number;
   active: boolean;
+  accentColor: string;
 }) {
   const roller = useRef<THREE.Group>(null);
 
@@ -92,7 +100,7 @@ function PoweredRoller({
         {[-0.12, -0.06, 0, 0.06, 0.12].map((x) => (
           <mesh key={x} position={[x, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
             <torusGeometry args={[radius + 0.003, 0.006, 8, 18]} />
-            <meshStandardMaterial color={accent} roughness={0.65} />
+            <meshStandardMaterial color={accentColor} roughness={0.65} />
           </mesh>
         ))}
       </group>
@@ -104,7 +112,7 @@ function PoweredRoller({
   );
 }
 
-function TurretAssembly({ frame, running }: { frame: TelemetryFrame; running: boolean }) {
+function TurretAssembly({ frame, running, accentColor, emissiveColor }: { frame: TelemetryFrame; running: boolean; accentColor: string; emissiveColor: string }) {
   const turret = useRef<THREE.Group>(null);
   const flywheel = useRef<THREE.Group>(null);
   const feeder = useRef<THREE.Group>(null);
@@ -140,7 +148,7 @@ function TurretAssembly({ frame, running }: { frame: TelemetryFrame; running: bo
       </mesh>
       <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <torusGeometry args={[0.122, 0.008, 10, 48]} />
-        <meshStandardMaterial color={accent} emissive="#145956" emissiveIntensity={0.28} metalness={0.4} roughness={0.4} />
+        <meshStandardMaterial color={accentColor} emissive={emissiveColor} emissiveIntensity={0.28} metalness={0.4} roughness={0.4} />
       </mesh>
 
       <group position={[0.137, 0.06, 0.025]}>
@@ -240,11 +248,12 @@ function TurretAssembly({ frame, running }: { frame: TelemetryFrame; running: bo
   );
 }
 
-export function ShooterRobotModel({ frame, width, length, running }: ShooterRobotModelProps) {
+export function ShooterRobotModel({ frame, width, length, running, allianceColor }: ShooterRobotModelProps) {
   const wheelX = width / 2 - 0.017;
   const wheelZ = length / 2 - 0.065;
   const railX = width / 2 - 0.035;
   const intakeActive = running && frame.intake !== "off";
+  const alliance = allianceAccent[allianceColor];
 
   return (
     <group>
@@ -265,13 +274,13 @@ export function ShooterRobotModel({ frame, width, length, running }: ShooterRobo
         </mesh>
       ))}
 
-      <MecanumModule position={[-wheelX, -0.055, -wheelZ]} rollerDirection={1} power={running ? frame.leftPower : 0} />
-      <MecanumModule position={[wheelX, -0.055, -wheelZ]} rollerDirection={-1} power={running ? frame.rightPower : 0} />
-      <MecanumModule position={[-wheelX, -0.055, wheelZ]} rollerDirection={-1} power={running ? frame.leftPower : 0} />
-      <MecanumModule position={[wheelX, -0.055, wheelZ]} rollerDirection={1} power={running ? frame.rightPower : 0} />
+      <MecanumModule position={[-wheelX, -0.055, -wheelZ]} rollerDirection={1} power={running ? frame.leftPower : 0} accentColor={alliance.color} />
+      <MecanumModule position={[wheelX, -0.055, -wheelZ]} rollerDirection={-1} power={running ? frame.rightPower : 0} accentColor={alliance.color} />
+      <MecanumModule position={[-wheelX, -0.055, wheelZ]} rollerDirection={-1} power={running ? frame.leftPower : 0} accentColor={alliance.color} />
+      <MecanumModule position={[wheelX, -0.055, wheelZ]} rollerDirection={1} power={running ? frame.rightPower : 0} accentColor={alliance.color} />
 
-      <PoweredRoller position={[0, -0.035, -length / 2 + 0.028]} radius={0.027} active={intakeActive} />
-      <PoweredRoller position={[0, 0.02, -length / 2 + 0.092]} radius={0.024} active={intakeActive} />
+      <PoweredRoller position={[0, -0.035, -length / 2 + 0.028]} radius={0.027} active={intakeActive} accentColor={alliance.color} />
+      <PoweredRoller position={[0, 0.02, -length / 2 + 0.092]} radius={0.024} active={intakeActive} accentColor={alliance.color} />
       {[-1, 1].map((side) => (
         <mesh key={side} position={[side * 0.16, 0.035, -0.13]} rotation={[-0.5, 0, 0]} castShadow>
           <boxGeometry args={[0.022, 0.035, 0.29]} />
@@ -289,14 +298,14 @@ export function ShooterRobotModel({ frame, width, length, running }: ShooterRobo
       </mesh>
       <mesh position={[-0.105, 0.064, 0.135]}>
         <boxGeometry args={[0.085, 0.008, 0.085]} />
-        <meshStandardMaterial color="#527dff" emissive="#1e397c" emissiveIntensity={0.22} />
+        <meshStandardMaterial color={alliance.color} emissive={alliance.emissive} emissiveIntensity={0.26} />
       </mesh>
 
-      <TurretAssembly frame={frame} running={running} />
+      <TurretAssembly frame={frame} running={running} accentColor={alliance.color} emissiveColor={alliance.emissive} />
 
       <mesh position={[0, 0.072, -length * 0.24]} rotation={[-Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.034, 0.068, 3]} />
-        <meshStandardMaterial color="#efffff" emissive={accent} emissiveIntensity={0.42} />
+        <meshStandardMaterial color="#efffff" emissive={alliance.color} emissiveIntensity={0.42} />
       </mesh>
     </group>
   );

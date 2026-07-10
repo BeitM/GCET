@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { BallCollider, CuboidCollider, Physics, RigidBody, RapierRigidBody } from "@react-three/rapier";
 import { Suspense, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
+import { AllianceColor, ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { ShooterRobotModel } from "@/components/ShooterRobotModel";
 import { RobotPresetId } from "@/lib/robots";
 
@@ -24,6 +24,7 @@ type FieldScene3DProps = {
   robotWidth: number;
   robotLength: number;
   robotId: RobotPresetId;
+  allianceColor: AllianceColor;
   coordinateSystem: CoordinateSystem;
   selectedArtifactRows: ArtifactRowId[];
   running: boolean;
@@ -32,12 +33,14 @@ type FieldScene3DProps = {
   ballResetSignal: number;
   frameIndex: number;
   onPhysicsArtifacts: (frameIndex: number, artifacts: ArtifactPhysicsState[]) => void;
+  onPhysicsArtifactCollected: (frameIndex: number, artifactIds: string[]) => void;
   onPhysicsShots: (frameIndex: number, shots: ShotPhysicsState[]) => void;
 };
 
 type FieldMouseCoordinates = { x: number; y: number } | null;
 type ReferenceTextProps = ComponentProps<typeof Text>;
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
+type ArtifactSeed = ArtifactSpec | ArtifactPhysicsState;
 
 const artifactSpecs: ArtifactSpec[] = [
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
@@ -213,7 +216,7 @@ function FieldBounds() {
   );
 }
 
-function Robot({ frame, width, length, running }: { frame: TelemetryFrame; width: number; length: number; running: boolean }) {
+function Robot({ frame, width, length, running, allianceColor }: { frame: TelemetryFrame; width: number; length: number; running: boolean; allianceColor: AllianceColor }) {
   const body = useRef<RapierRigidBody>(null);
   const widthMeters = width * INCHES_TO_METERS;
   const lengthMeters = length * INCHES_TO_METERS;
@@ -230,7 +233,7 @@ function Robot({ frame, width, length, running }: { frame: TelemetryFrame; width
   return (
     <RigidBody ref={body} type="kinematicPosition" colliders={false} position={[position[0], 0.12, position[2]]} canSleep={false}>
       <CuboidCollider args={[widthMeters / 2, 0.2, lengthMeters / 2]} position={[0, 0.08, 0]} friction={1.2} />
-      <ShooterRobotModel frame={frame} width={widthMeters} length={lengthMeters} running={running} />
+      <ShooterRobotModel frame={frame} width={widthMeters} length={lengthMeters} running={running} allianceColor={allianceColor} />
     </RigidBody>
   );
 }
@@ -243,9 +246,23 @@ function RobotTrail({ trail }: { trail: TelemetryFrame[] }) {
   return points.length > 1 ? <Line points={points} color="#25e0da" lineWidth={2} transparent opacity={0.75} /> : null;
 }
 
-function artifactWorldPosition(artifact: ArtifactSpec, y = 0): [number, number, number] {
+function artifactWorldPosition(artifact: Pick<ArtifactSpec, "x" | "y">, y = 0): [number, number, number] {
   const [x, , z] = fieldPosition(artifact.x, artifact.y);
   return [-z, y, x];
+}
+
+function fieldCoordinatesFromWorld(translation: { x: number; z: number }) {
+  return {
+    x: translation.z / INCHES_TO_METERS + FIELD_INCHES / 2,
+    y: FIELD_INCHES / 2 - translation.x / INCHES_TO_METERS,
+  };
+}
+
+function retireBody(body: RapierRigidBody) {
+  body.setTranslation({ x: 99, y: -99, z: 99 }, true);
+  body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  body.sleep();
 }
 
 function ArtifactMarker({ artifact }: { artifact: ArtifactSpec }) {
@@ -324,7 +341,7 @@ function DynamicArtifactBody({
   artifact,
   bodyRef,
 }: {
-  artifact: ArtifactSpec;
+  artifact: ArtifactSeed;
   bodyRef: (body: RapierRigidBody | null) => void;
 }) {
   const safeArtifact = {
@@ -355,39 +372,76 @@ function DynamicArtifactBody({
 }
 
 function DynamicArtifactsRecorder({
+  frame,
   selectedRows,
+  initialArtifacts,
+  robotWidth,
+  robotLength,
   frameIndex,
   resetSignal,
   onRecord,
+  onCollect,
 }: {
+  frame: TelemetryFrame;
   selectedRows: ArtifactRowId[];
+  initialArtifacts?: ArtifactPhysicsState[];
+  robotWidth: number;
+  robotLength: number;
   frameIndex: number;
   resetSignal: number;
   onRecord: (frameIndex: number, artifacts: ArtifactPhysicsState[]) => void;
+  onCollect: (frameIndex: number, artifactIds: string[]) => void;
 }) {
   const selected = useMemo(() => new Set(selectedRows), [selectedRows]);
-  const artifacts = useMemo(() => artifactSpecs.filter((artifact) => selected.has(artifact.row)), [selected]);
+  const artifacts = useMemo<ArtifactSeed[]>(
+    () => initialArtifacts ?? artifactSpecs.filter((artifact) => selected.has(artifact.row)),
+    [initialArtifacts, selected],
+  );
   const bodies = useRef<Record<string, RapierRigidBody | null>>({});
+  const returnedArtifacts = useRef<Set<string>>(new Set());
 
   useFrame(() => {
+    const [robotX, , robotZ] = fieldPosition(frame.x, frame.y);
+    const headingRadians = THREE.MathUtils.degToRad(frame.heading);
+    const intakeForward = { x: Math.cos(headingRadians), z: -Math.sin(headingRadians) };
+    const intakeRight = { x: Math.sin(headingRadians), z: Math.cos(headingRadians) };
+    const frontMin = robotLength * INCHES_TO_METERS / 2 - ARTIFACT_RADIUS * 1.35;
+    const frontMax = robotLength * INCHES_TO_METERS / 2 + ARTIFACT_RADIUS * 2.75;
+    const sideLimit = robotWidth * INCHES_TO_METERS / 2 + ARTIFACT_RADIUS * 1.25;
+    const canCollect = frame.intake === "in" && (frame.artifactCount < 3 || frame.event?.includes("collected artifact"));
     const recorded = artifacts.flatMap((artifact) => {
+      if (returnedArtifacts.current.has(artifact.id)) return [];
       const body = bodies.current[artifact.id];
       if (!body) return [];
       const translation = body.translation();
       const rotation = body.rotation();
-      const fieldX = translation.z / INCHES_TO_METERS + FIELD_INCHES / 2;
-      const fieldY = FIELD_INCHES / 2 - translation.x / INCHES_TO_METERS;
+
+      const dx = translation.x - robotX;
+      const dz = translation.z - robotZ;
+      const localForward = dx * intakeForward.x + dz * intakeForward.z;
+      const localRight = dx * intakeRight.x + dz * intakeRight.z;
+      const insideIntake = localForward >= frontMin && localForward <= frontMax && Math.abs(localRight) <= sideLimit;
+
+      const collectedByIntake = canCollect && insideIntake;
+      if (translation.y <= SHOT_RETURN_Y || collectedByIntake) {
+        returnedArtifacts.current.add(artifact.id);
+        retireBody(body);
+        if (collectedByIntake) onCollect(frameIndex, [artifact.id]);
+        return [];
+      }
+
+      const field = fieldCoordinatesFromWorld(translation);
       const rollEuler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
       return [{
         id: artifact.id,
         row: artifact.row,
         color: artifact.color,
-        x: fieldX,
-        y: fieldY,
+        x: field.x,
+        y: field.y,
         roll: rollEuler.x,
       }];
     });
-    if (recorded.length > 0) onRecord(frameIndex, recorded);
+    onRecord(frameIndex, recorded);
   });
 
   return (
@@ -427,13 +481,6 @@ function shotLaunchState(shotFrame: TelemetryFrame, robotLength: number) {
       forward.z * horizontalSpeed,
     ),
   };
-}
-
-function returnedLoadingPosition(shotFrame: TelemetryFrame, shotId: number): [number, number, number] {
-  const row: ArtifactRowId = shotFrame.y > 72 ? "topLoading" : "bottomLoading";
-  const loadingArtifacts = artifactSpecs.filter((artifact) => artifact.row === row);
-  const artifact = loadingArtifacts[(shotId - 1) % loadingArtifacts.length] || loadingArtifacts[0];
-  return artifactWorldPosition(artifact, ARTIFACT_CENTER_Y);
 }
 
 function DynamicShotBody({
@@ -501,14 +548,13 @@ function DynamicShotsRecorder({
     return Array.from(byId.values());
   }, [trail]);
   const bodies = useRef<Record<number, RapierRigidBody | null>>({});
-  const returnedShots = useRef<Record<number, ShotPhysicsState>>({});
+  const returnedShots = useRef<Set<number>>(new Set());
 
   useFrame(() => {
     const recorded = shotFrames.flatMap((shotFrame) => {
       const shot = shotFrame.shot;
       if (!shot) return [];
-      const returned = returnedShots.current[shot.id];
-      if (returned) return [returned];
+      if (returnedShots.current.has(shot.id)) return [];
 
       const body = bodies.current[shot.id];
       if (!body) return [];
@@ -517,14 +563,9 @@ function DynamicShotsRecorder({
       const rollEuler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
 
       if (translation.y <= SHOT_RETURN_Y) {
-        const [x, y, z] = returnedLoadingPosition(shotFrame, shot.id);
-        const returnedShot = { id: shot.id, x, y, z, roll: 0 };
-        returnedShots.current[shot.id] = returnedShot;
-        body.setTranslation({ x, y, z }, true);
-        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-        body.sleep();
-        return [returnedShot];
+        returnedShots.current.add(shot.id);
+        retireBody(body);
+        return [];
       }
 
       return [{
@@ -706,14 +747,19 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
         <DecodeFieldModel />
         <FieldBounds />
-        <Robot key={`${props.robotId}-${props.robotWidth}-${props.robotLength}`} frame={props.frame} width={props.robotWidth} length={props.robotLength} running={props.running} />
+        <Robot key={`${props.robotId}-${props.robotWidth}-${props.robotLength}`} frame={props.frame} width={props.robotWidth} length={props.robotLength} running={props.running} allianceColor={props.allianceColor} />
         {props.recordingPhysics && (
           <>
             <DynamicArtifactsRecorder
+              frame={props.frame}
               selectedRows={props.selectedArtifactRows}
+              initialArtifacts={props.frame.artifacts}
+              robotWidth={props.robotWidth}
+              robotLength={props.robotLength}
               frameIndex={props.frameIndex}
               resetSignal={props.ballResetSignal}
               onRecord={props.onPhysicsArtifacts}
+              onCollect={props.onPhysicsArtifactCollected}
             />
             <DynamicShotsRecorder
               trail={props.trail}

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
-import { ArtifactRowId, CoordinateSystem } from "@/lib/types";
+import { AllianceColor, ArtifactRowId, ControlMode, CoordinateSystem } from "@/lib/types";
 
 const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
   { id: "topLoading", label: "Blue Loading Zone" },
@@ -13,7 +14,46 @@ const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
   { id: "bottomLeft", label: "Red 3" },
 ];
 
+const commandReferenceGroups = [
+  {
+    type: "Drive",
+    commands: [
+      { name: "driveForward(value)", snippet: "driveForward(24)", detail: "Move forward by inches." },
+      { name: "driveBack(value)", snippet: "driveBack(24)", detail: "Move backward by inches." },
+      { name: "driveLeft(value)", snippet: "driveLeft(12)", detail: "Strafe left by inches." },
+      { name: "driveRight(value)", snippet: "driveRight(12)", detail: "Strafe right by inches." },
+      { name: "driveToPosition(x, y)", snippet: "driveToPosition(48, 48)", detail: "Drive to a coordinate while holding heading." },
+      { name: "driveToPosition(x, y, heading)", snippet: "driveToPosition(48, 48, 90)", detail: "Drive to a coordinate while turning to heading." },
+      { name: "turn(value)", snippet: "turn(90)", detail: "Turn in place to an absolute heading in degrees." },
+    ],
+  },
+  {
+    type: "Shooter",
+    commands: [
+      { name: "spinFlywheel(value)", snippet: "spinFlywheel(3600)", detail: "Ramp flywheel to target RPM." },
+      { name: "shoot()", snippet: "shoot()", detail: "Shoot one loaded artifact at 45 degrees." },
+      { name: "shoot(value)", snippet: "shoot(45)", detail: "Shoot one loaded artifact at 20 to 70 degrees." },
+    ],
+  },
+  {
+    type: "Intake",
+    commands: [
+      { name: "intakeSpinIn()", snippet: "intakeSpinIn()", detail: "Run intake inward and collect artifacts on contact." },
+      { name: "intakeSpinOut()", snippet: "intakeSpinOut()", detail: "Release loaded artifacts." },
+      { name: "intakeStopSpin()", snippet: "intakeStopSpin()", detail: "Stop the intake." },
+    ],
+  },
+  {
+    type: "Timing",
+    commands: [
+      { name: "wait(value)", snippet: "wait(1)", detail: "Wait for seconds." },
+    ],
+  },
+];
+
 type InputPanelProps = {
+  controlMode: ControlMode;
+  setControlMode: (value: ControlMode) => void;
   goal: string;
   setGoal: (value: string) => void;
   code: string;
@@ -25,6 +65,8 @@ type InputPanelProps = {
   canAnalyze: boolean;
   robotId: RobotPresetId;
   onRobot: (id: RobotPresetId) => void;
+  allianceColor: AllianceColor;
+  setAllianceColor: (value: AllianceColor) => void;
   coordinateSystem: CoordinateSystem;
   setCoordinateSystem: (value: CoordinateSystem) => void;
   startX: number;
@@ -103,6 +145,8 @@ function NumberDraftInput({
 }
 
 export function InputPanel({
+  controlMode,
+  setControlMode,
   goal,
   setGoal,
   code,
@@ -114,6 +158,8 @@ export function InputPanel({
   canAnalyze,
   robotId,
   onRobot,
+  allianceColor,
+  setAllianceColor,
   coordinateSystem,
   setCoordinateSystem,
   startX,
@@ -130,11 +176,104 @@ export function InputPanel({
 }: InputPanelProps) {
   const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
   const [showArtifactRows, setShowArtifactRows] = useState(false);
+  const [showCommandReference, setShowCommandReference] = useState(false);
+  const [commandSearch, setCommandSearch] = useState("");
+  const [commandWindowOffset, setCommandWindowOffset] = useState({ x: 0, y: 0 });
+  const [mounted, setMounted] = useState(false);
+  const dragStart = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
   const coordinateBounds = coordinateSystem === "center"
     ? { min: -72, max: 72, detail: "Center origin" }
     : { min: 0, max: 144, detail: "Corner origin" };
+  const filteredCommandGroups = useMemo(() => {
+    const query = commandSearch.trim().toLowerCase();
+    if (!query) return commandReferenceGroups;
+
+    return commandReferenceGroups
+      .map((group) => ({
+        ...group,
+        commands: group.commands.filter((command) => `${command.name} ${command.detail} ${group.type}`.toLowerCase().includes(query)),
+      }))
+      .filter((group) => group.commands.length > 0);
+  }, [commandSearch]);
+
+  const beginCommandWindowDrag = (event: PointerEvent<HTMLDivElement>) => {
+    dragStart.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      x: commandWindowOffset.x,
+      y: commandWindowOffset.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const dragCommandWindow = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragStart.current) return;
+    setCommandWindowOffset({
+      x: dragStart.current.x + event.clientX - dragStart.current.pointerX,
+      y: dragStart.current.y + event.clientY - dragStart.current.pointerY,
+    });
+  };
+
+  const endCommandWindowDrag = () => {
+    dragStart.current = null;
+  };
+  const commandReferenceWindow = showCommandReference ? (
+    <div
+      className="command-reference-window"
+      role="dialog"
+      aria-label="Robot command reference"
+      style={{ transform: `translate(${commandWindowOffset.x}px, ${commandWindowOffset.y}px)` }}
+    >
+      <div
+        className="command-reference-titlebar"
+        onPointerDown={beginCommandWindowDrag}
+        onPointerMove={dragCommandWindow}
+        onPointerUp={endCommandWindowDrag}
+        onPointerCancel={endCommandWindowDrag}
+      >
+        <strong>Commands</strong>
+        <button
+          type="button"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            dragStart.current = null;
+          }}
+          onClick={() => setShowCommandReference(false)}
+          aria-label="Close command reference"
+        >
+          x
+        </button>
+      </div>
+      <input
+        aria-label="Search robot commands"
+        className="command-reference-search"
+        value={commandSearch}
+        onChange={(event) => setCommandSearch(event.target.value)}
+        placeholder="Search commands"
+      />
+      <div className="command-reference-list">
+        {filteredCommandGroups.map((group) => (
+          <section key={group.type}>
+            <h3>{group.type}</h3>
+            {group.commands.map((command) => (
+              <button key={command.name} type="button" onClick={() => setCode(`${code}${code.trim() ? "\n" : ""}${command.snippet};`)}>
+                <code>{command.name}</code>
+                <span>{command.detail}</span>
+              </button>
+            ))}
+          </section>
+        ))}
+        {filteredCommandGroups.length === 0 && <p>No commands found.</p>}
+      </div>
+    </div>
+  ) : null;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
+    <>
     <aside className="input-panel panel">
       <div className="panel-head input-panel-head">
         <div>
@@ -142,6 +281,28 @@ export function InputPanel({
           <p>Configure the robot code and virtual robot.</p>
         </div>
       </div>
+
+      <section className="setup-section mode-section">
+        <label className="form-label">Simulation mode</label>
+        <div className={`mode-toggle ${controlMode}`} role="group" aria-label="Simulation mode">
+          <button
+            type="button"
+            className={controlMode === "autonomous" ? "active" : ""}
+            aria-pressed={controlMode === "autonomous"}
+            onClick={() => setControlMode("autonomous")}
+          >
+            Autonomous
+          </button>
+          <button
+            type="button"
+            className={controlMode === "teleop" ? "active" : ""}
+            aria-pressed={controlMode === "teleop"}
+            onClick={() => setControlMode("teleop")}
+          >
+            TeleOp
+          </button>
+        </div>
+      </section>
 
       <section className="setup-section goal-section">
         <label className="form-label" htmlFor="goal">Robot goal</label>
@@ -154,6 +315,12 @@ export function InputPanel({
           <span>LOCAL SIMULATION</span>
         </div>
         <textarea id="code" spellCheck={false} className="code-input" value={code} onChange={(event) => setCode(event.target.value)} />
+        <div className="command-reference-dock">
+          <button type="button" className="artifact-row-toggle command-reference-toggle" onClick={() => setShowCommandReference((open) => !open)}>
+            <span>{showCommandReference ? "Hide command reference" : "Command reference"}</span>
+            <b>{showCommandReference ? "-" : "+"}</b>
+          </button>
+        </div>
       </section>
 
       <section className="setup-section robot-configurator">
@@ -176,6 +343,17 @@ export function InputPanel({
           <span>{selectedRobot?.description}</span>
         </div>
         <button type="button" className="cad-button" disabled><span>+</span> Import CAD <small>Coming later</small></button>
+        <div className="field-config-subtitle robot-config-subtitle">Alliance color</div>
+        <div className="preload-control alliance-control">
+          <span>Alliance color</span>
+          <div className="select-wrap preload-select">
+            <select value={allianceColor} onChange={(event) => setAllianceColor(event.target.value as AllianceColor)}>
+              <option value="blue">Blue</option>
+              <option value="red">Red</option>
+            </select>
+            <span>v</span>
+          </div>
+        </div>
       </section>
 
       <section className="setup-section field-configurator">
@@ -252,7 +430,7 @@ export function InputPanel({
       <div className="input-actions">
         <button className="button run-button" onClick={onRun} disabled={running}>
           <span>{running ? "■" : "▶"}</span>
-          {running ? "Simulation running..." : "Run simulation"}
+          {running ? (controlMode === "teleop" ? "TeleOp running..." : "Simulation running...") : (controlMode === "teleop" ? "Start TeleOp" : "Run simulation")}
         </button>
         {running && (
           <button className="button analyze-button" type="button" onClick={onStop}>
@@ -268,5 +446,7 @@ export function InputPanel({
         {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock the feedback placeholder.</p>}
       </div>
     </aside>
+    {mounted && commandReferenceWindow ? createPortal(commandReferenceWindow, document.body) : null}
+    </>
   );
 }

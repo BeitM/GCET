@@ -1,6 +1,6 @@
 import { FieldScene3D } from "@/components/FieldScene3D";
 import { fieldSeasons } from "@/lib/seasons";
-import { ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
+import { AllianceColor, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { RobotPresetId } from "@/lib/robots";
 
 type FieldSimulatorProps = {
@@ -10,6 +10,7 @@ type FieldSimulatorProps = {
   robotWidth: number;
   robotLength: number;
   robotId: RobotPresetId;
+  allianceColor: AllianceColor;
   coordinateSystem: CoordinateSystem;
   selectedArtifactRows: ArtifactRowId[];
   recordingPhysics: boolean;
@@ -20,6 +21,7 @@ type FieldSimulatorProps = {
   totalFrames: number;
   duration: number;
   onPhysicsArtifacts: (frameIndex: number, artifacts: NonNullable<TelemetryFrame["artifacts"]>) => void;
+  onPhysicsArtifactCollected: (frameIndex: number, artifactIds: string[]) => void;
   onPhysicsShots: (frameIndex: number, shots: ShotPhysicsState[]) => void;
   onSeek: (index: number) => void;
   onTogglePlayback: () => void;
@@ -32,6 +34,7 @@ export function FieldSimulator({
   robotWidth,
   robotLength,
   robotId,
+  allianceColor,
   coordinateSystem,
   selectedArtifactRows,
   recordingPhysics,
@@ -42,6 +45,7 @@ export function FieldSimulator({
   totalFrames,
   duration,
   onPhysicsArtifacts,
+  onPhysicsArtifactCollected,
   onPhysicsShots,
   onSeek,
   onTogglePlayback,
@@ -76,6 +80,7 @@ export function FieldSimulator({
           robotWidth={robotWidth}
           robotLength={robotLength}
           robotId={robotId}
+          allianceColor={allianceColor}
           coordinateSystem={coordinateSystem}
           selectedArtifactRows={selectedArtifactRows}
           running={running}
@@ -84,6 +89,7 @@ export function FieldSimulator({
           ballResetSignal={ballResetSignal}
           frameIndex={frameIndex}
           onPhysicsArtifacts={onPhysicsArtifacts}
+          onPhysicsArtifactCollected={onPhysicsArtifactCollected}
           onPhysicsShots={onPhysicsShots}
         />
         {showPlayback && (
