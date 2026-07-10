@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AIFeedback, AIChatMessage, AllianceColor, AnalyzeResponse, ArtifactPhysicsState, ArtifactRowId, ControlMode, CoordinateSystem, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { AIFeedbackPanel } from "@/components/AIFeedbackPanel";
 import { FieldSimulator } from "@/components/FieldSimulator";
@@ -57,6 +57,8 @@ const ARTIFACT_RADIUS_INCHES = 2.5;
 const ARTIFACT_WALL_CLEARANCE_INCHES = 3.25;
 const ARTIFACT_RESTITUTION = 0.32;
 const ARTIFACT_FRICTION_PER_SECOND = 4.2;
+const ARTIFACT_MAX_SPEED_INCHES_PER_SECOND = 96;
+const ROBOT_PUSH_MAX_SPEED_INCHES_PER_SECOND = 72;
 const AUTO_DRIVE_SPEED_INCHES_PER_SECOND = 36;
 const AUTO_TURN_DEGREES_PER_SECOND = 270;
 const TELEOP_DRIVE_SPEED_INCHES_PER_SECOND = 54;
@@ -145,6 +147,7 @@ const baseFrame: TelemetryFrame = {
 };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const smootherStep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const normalizeHeading = (value: number) => {
   const wrapped = value % 360;
@@ -162,23 +165,28 @@ type ClassifierZone = {
   minHeight: number;
   maxHeight: number;
 };
-const classifierZones: ClassifierZone[] = [
-  { goal: "blue", minX: 0, maxX: 30, minY: 104, maxY: 144, minHeight: 0.05, maxHeight: 0.95 },
-  { goal: "red", minX: 114, maxX: 144, minY: 104, maxY: 144, minHeight: 0.05, maxHeight: 0.95 },
+type ClassifierEntryPlane = {
+  goal: AllianceColor;
+  planeX: number;
+  direction: "decreasingX" | "increasingX";
+  minY: number;
+  maxY: number;
+  minHeight: number;
+  maxHeight: number;
+};
+const classifierEntryPlanes: ClassifierEntryPlane[] = [
+  { goal: "blue", planeX: 30, direction: "decreasingX", minY: 70, maxY: 138, minHeight: 0.12, maxHeight: 1.65 },
+  { goal: "red", planeX: 114, direction: "increasingX", minY: 70, maxY: 138, minHeight: 0.12, maxHeight: 1.65 },
 ];
-const shotFieldPositions = (shot: ShotPhysicsState): ShotFieldPosition[] => {
-  const direct = {
+const classifierZones: ClassifierZone[] = [
+  { goal: "blue", minX: 0, maxX: 30, minY: 70, maxY: 138, minHeight: 0.05, maxHeight: 1.65 },
+  { goal: "red", minX: 114, maxX: 144, minY: 70, maxY: 138, minHeight: 0.05, maxHeight: 1.65 },
+];
+const shotFieldPosition = (shot: ShotPhysicsState): ShotFieldPosition => ({
     x: shot.x / 0.0254 + FIELD_SIZE_INCHES / 2,
     y: shot.z / 0.0254 + FIELD_SIZE_INCHES / 2,
     height: shot.y,
-  };
-  const rotated = {
-    x: shot.z / 0.0254 + FIELD_SIZE_INCHES / 2,
-    y: FIELD_SIZE_INCHES / 2 - shot.x / 0.0254,
-    height: shot.y,
-  };
-  return [direct, rotated];
-};
+});
 const positionInClassifierZone = (position: ShotFieldPosition, zone: ClassifierZone) => (
   position.x >= zone.minX &&
   position.x <= zone.maxX &&
@@ -202,12 +210,31 @@ const segmentIntersectsClassifierZone = (previous: ShotFieldPosition, current: S
 
   return false;
 };
+const segmentCrossesClassifierEntry = (previous: ShotFieldPosition, current: ShotFieldPosition, plane: ClassifierEntryPlane) => {
+  const dx = current.x - previous.x;
+  if (Math.abs(dx) < 0.001) return false;
+  if (plane.direction === "decreasingX" && !(previous.x > plane.planeX && current.x <= plane.planeX)) return false;
+  if (plane.direction === "increasingX" && !(previous.x < plane.planeX && current.x >= plane.planeX)) return false;
+
+  const t = (plane.planeX - previous.x) / dx;
+  if (t < 0 || t > 1) return false;
+  const y = lerp(previous.y, current.y, t);
+  const height = lerp(previous.height, current.height, t);
+  return y >= plane.minY
+    && y <= plane.maxY
+    && height >= plane.minHeight
+    && height <= plane.maxHeight;
+};
 const classifierGoalForShot = (shot: ShotPhysicsState, previous?: ShotFieldPosition[]): AllianceColor | null => {
-  const positions = shotFieldPositions(shot);
-  for (const zone of classifierZones) {
-    for (let i = 0; i < positions.length; i++) {
-      if (previous?.[i] ? segmentIntersectsClassifierZone(previous[i], positions[i], zone) : positionInClassifierZone(positions[i], zone)) return zone.goal;
+  const position = shotFieldPosition(shot);
+  if (previous?.[0]) {
+    for (const plane of classifierEntryPlanes) {
+      if (segmentCrossesClassifierEntry(previous[0], position, plane)) return plane.goal;
     }
+  }
+
+  for (const zone of classifierZones) {
+    if (previous?.[0] ? segmentIntersectsClassifierZone(previous[0], position, zone) : positionInClassifierZone(position, zone)) return zone.goal;
   }
 
   return null;
@@ -225,7 +252,7 @@ const applyScoringToFrames = (recorded: TelemetryFrame[], allianceColor: Allianc
     for (const shot of frame.shots ?? []) {
       const previousPositions = lastShotPositions.get(shot.id);
       const goal = scoredShots.has(shot.id) ? null : classifierGoalForShot(shot, previousPositions);
-      lastShotPositions.set(shot.id, shotFieldPositions(shot));
+      lastShotPositions.set(shot.id, [shotFieldPosition(shot)]);
       if (!goal) continue;
 
       scoredShots.add(shot.id);
@@ -355,8 +382,12 @@ const resolveArtifactRobotCollision = (
   artifact.x += nx * penetration;
   artifact.y += ny * penetration;
 
-  const robotVx = (robot.x - previousRobot.x) / dt;
-  const robotVy = (robot.y - previousRobot.y) / dt;
+  const rawRobotVx = (robot.x - previousRobot.x) / dt;
+  const rawRobotVy = (robot.y - previousRobot.y) / dt;
+  const robotSpeed = Math.hypot(rawRobotVx, rawRobotVy);
+  const robotVelocityScale = robotSpeed > ROBOT_PUSH_MAX_SPEED_INCHES_PER_SECOND ? ROBOT_PUSH_MAX_SPEED_INCHES_PER_SECOND / robotSpeed : 1;
+  const robotVx = rawRobotVx * robotVelocityScale;
+  const robotVy = rawRobotVy * robotVelocityScale;
   const normalVelocity = (artifact.vx - robotVx) * nx + (artifact.vy - robotVy) * ny;
   if (normalVelocity < 0) {
     const impulse = -(1 + ARTIFACT_RESTITUTION) * normalVelocity;
@@ -365,6 +396,12 @@ const resolveArtifactRobotCollision = (
   }
   artifact.vx += robotVx * 0.22;
   artifact.vy += robotVy * 0.22;
+  const artifactSpeed = Math.hypot(artifact.vx, artifact.vy);
+  if (artifactSpeed > ARTIFACT_MAX_SPEED_INCHES_PER_SECOND) {
+    const scale = ARTIFACT_MAX_SPEED_INCHES_PER_SECOND / artifactSpeed;
+    artifact.vx *= scale;
+    artifact.vy *= scale;
+  }
 };
 const stepArtifactPhysics = (
   artifacts: SimArtifact[],
@@ -752,19 +789,21 @@ function generateRobotCodeFrames(
   const advanceDrive = (target: StartPose, event: string, gradualHeading: boolean) => {
     const start = { ...current };
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
-    const totalTime = Math.max(0.23, distance / AUTO_DRIVE_SPEED_INCHES_PER_SECOND);
+    const turnTime = gradualHeading ? Math.abs(headingDelta(start.heading, target.heading)) / AUTO_TURN_DEGREES_PER_SECOND : 0;
+    const totalTime = Math.max(0.23, distance / AUTO_DRIVE_SPEED_INCHES_PER_SECOND, turnTime);
     const steps = Math.max(4, Math.ceil(totalTime / SIMULATION_FRAME_SECONDS));
 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
+      const motionT = smootherStep(t);
       const dt = totalTime / steps;
       time += dt;
       leftEncoder += distance * 5.8 / steps;
       rightEncoder += distance * 5.8 / steps;
       stepPhysicsTo({
-        x: lerp(start.x, target.x, t),
-        y: lerp(start.y, target.y, t),
-        heading: gradualHeading ? lerpHeading(start.heading, target.heading, t) : start.heading,
+        x: lerp(start.x, target.x, motionT),
+        y: lerp(start.y, target.y, motionT),
+        heading: gradualHeading ? lerpHeading(start.heading, target.heading, motionT) : start.heading,
       }, dt);
       const contactEvent = collectIntakeContact();
       pushFrame({
@@ -787,6 +826,7 @@ function generateRobotCodeFrames(
 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
+      const motionT = smootherStep(t);
       const dt = totalTime / steps;
       time += dt;
       const turnProgress = Math.abs(delta) / steps;
@@ -794,7 +834,7 @@ function generateRobotCodeFrames(
       rightEncoder += turnProgress * 2.1;
       stepPhysicsTo({
         ...start,
-        heading: lerpHeading(start.heading, heading, t),
+        heading: lerpHeading(start.heading, heading, motionT),
       }, dt);
       const contactEvent = collectIntakeContact();
       pushFrame({
@@ -1277,23 +1317,64 @@ export default function SimulatorDashboard() {
     return nextFrames;
   };
 
+  const removeCollectedShots = (sourceFrames: TelemetryFrame[], frameIndex: number, shotIds: number[]) => {
+    if (shotIds.length === 0) return sourceFrames;
+    const collectedShotIds = new Set(shotIds);
+    return sourceFrames.map((frame, index) => (
+      index < frameIndex || !frame.shots
+        ? frame
+        : {
+          ...frame,
+          shots: frame.shots.filter((shot) => !collectedShotIds.has(shot.id)),
+        }
+    ));
+  };
+
   const recordPhysicsArtifactCollected = (frameIndex: number, artifactIds: string[]) => {
     if (!physicsRecordingFrames.current) return;
     const newArtifactIds = artifactIds.filter((id) => !physicsCollectedArtifacts.current.has(id));
     if (newArtifactIds.length === 0) return;
+    const collectedShotIds = newArtifactIds
+      .map((id) => id.match(/^shot-(\d+)$/)?.[1])
+      .filter((id): id is string => Boolean(id))
+      .map((id) => Number(id));
     newArtifactIds.forEach((id) => physicsCollectedArtifacts.current.add(id));
     if (teleopRuntime.current) {
       teleopRuntime.current.artifactCount = Math.min(3, teleopRuntime.current.artifactCount + newArtifactIds.length);
       teleopRuntime.current.artifacts = teleopRuntime.current.artifacts.filter((artifact) => !newArtifactIds.includes(artifact.id));
     }
-    const repairedRecording = repairFramesAfterIntakeCollection(physicsRecordingFrames.current, frameIndex, newArtifactIds.length);
+    collectedShotIds.forEach((shotId) => {
+      for (const [recordedFrameIndex, shots] of physicsRecordingShots.current) {
+        if (recordedFrameIndex >= frameIndex) {
+          physicsRecordingShots.current.set(recordedFrameIndex, shots.filter((shot) => shot.id !== shotId));
+        }
+      }
+      physicsRecordingShots.current.set(frameIndex, (physicsRecordingShots.current.get(frameIndex) ?? []).filter((shot) => shot.id !== shotId));
+    });
+    const repairedRecording = removeCollectedShots(
+      repairFramesAfterIntakeCollection(physicsRecordingFrames.current, frameIndex, newArtifactIds.length),
+      frameIndex,
+      collectedShotIds,
+    );
     physicsRecordingFrames.current = repairedRecording;
-    setFrames((currentFrames) => repairFramesAfterIntakeCollection(currentFrames, frameIndex, newArtifactIds.length));
+    setFrames((currentFrames) => removeCollectedShots(
+      repairFramesAfterIntakeCollection(currentFrames, frameIndex, newArtifactIds.length),
+      frameIndex,
+      collectedShotIds,
+    ));
   };
 
   const recordPhysicsShots = (frameIndex: number, shots: ShotPhysicsState[]) => {
     if (!physicsRecordingFrames.current) return;
-    const nextShots = shots.map((shot) => ({ ...shot }));
+    const collectedShotIds = new Set(
+      Array.from(physicsCollectedArtifacts.current)
+        .map((id) => id.match(/^shot-(\d+)$/)?.[1])
+        .filter((id): id is string => Boolean(id))
+        .map((id) => Number(id)),
+    );
+    const nextShots = shots
+      .filter((shot) => !collectedShotIds.has(shot.id))
+      .map((shot) => ({ ...shot }));
     physicsRecordingShots.current.set(frameIndex, nextShots);
 
     physicsRecordingFrames.current[frameIndex] = {
@@ -1375,12 +1456,16 @@ export default function SimulatorDashboard() {
     const previousPose = { ...runtime.pose };
     const turnDirection = (keys.has("arrowleft") ? 1 : 0) - (keys.has("arrowright") ? 1 : 0);
     const nextHeading = normalizeHeading(runtime.pose.heading + turnDirection * TELEOP_TURN_DEGREES_PER_SECOND * SIMULATION_FRAME_SECONDS);
-    const headingRadians = nextHeading * THREE_DEGREES_TO_RADIANS;
-    const forward = { x: Math.cos(headingRadians), y: -Math.sin(headingRadians) };
-    const right = { x: Math.sin(headingRadians), y: Math.cos(headingRadians) };
     const forwardAxis = (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0);
     const strafeAxis = (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0);
     const intakeMode: TelemetryFrame["intake"] = keys.has("z") ? "in" : "off";
+    const isDriving = forwardAxis !== 0 || strafeAxis !== 0;
+    const driveHeading = isDriving && turnDirection !== 0
+      ? lerpHeading(runtime.pose.heading, nextHeading, 0.5)
+      : nextHeading;
+    const headingRadians = driveHeading * THREE_DEGREES_TO_RADIANS;
+    const forward = { x: Math.cos(headingRadians), y: -Math.sin(headingRadians) };
+    const right = { x: Math.sin(headingRadians), y: Math.cos(headingRadians) };
     const axisMagnitude = Math.hypot(forwardAxis, strafeAxis) || 1;
     const driveStep = TELEOP_DRIVE_SPEED_INCHES_PER_SECOND * SIMULATION_FRAME_SECONDS / axisMagnitude;
     const nextPose = constrainRobotPose(
@@ -1562,7 +1647,7 @@ export default function SimulatorDashboard() {
     };
     const controlKeys = new Set(["w", "a", "s", "d", "z", "arrowleft", "arrowright", " "]);
     const handleKeyDown = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
+      const key = event.code === "Space" ? " " : event.key.toLowerCase();
       if (!running || !controlKeys.has(key) || isEditableTarget(event.target)) return;
       event.preventDefault();
       if (key === " " && !event.repeat) {
@@ -1572,7 +1657,7 @@ export default function SimulatorDashboard() {
       if (key !== " ") teleopKeys.current.add(key);
     };
     const handleKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
+      const key = event.code === "Space" ? " " : event.key.toLowerCase();
       if (!controlKeys.has(key)) return;
       teleopKeys.current.delete(key);
     };
@@ -1587,6 +1672,19 @@ export default function SimulatorDashboard() {
     // TeleOp actions read mutable refs so this should only rebind on mode/run state changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlMode, running]);
+
+  const fieldTrail = useMemo(() => {
+    if (controlMode === "teleop") {
+      const shotFrames: TelemetryFrame[] = [];
+      for (let frameIndex = 0; frameIndex <= index; frameIndex++) {
+        const recordedFrame = frames[frameIndex];
+        if (recordedFrame?.shot) shotFrames.push(recordedFrame);
+      }
+      return shotFrames;
+    }
+
+    return frames.slice(0, index + 1);
+  }, [controlMode, frames, index]);
 
   const shootSignal = frame.shot ? (runId + 1) * 1000000 + playbackId * 10000 + frame.shot.id : -1;
 
@@ -1634,7 +1732,8 @@ export default function SimulatorDashboard() {
           <div className="field-row">
             <FieldSimulator
               frame={frame}
-              trail={controlMode === "teleop" ? [] : frames.slice(0, index + 1)}
+              trail={fieldTrail}
+              showRobotTrail={controlMode !== "teleop"}
               running={running}
               robotId={robotId}
               allianceColor={allianceColor}

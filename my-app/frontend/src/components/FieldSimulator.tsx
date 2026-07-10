@@ -6,6 +6,7 @@ import { RobotPresetId } from "@/lib/robots";
 type FieldSimulatorProps = {
   frame: TelemetryFrame;
   trail: TelemetryFrame[];
+  showRobotTrail: boolean;
   running: boolean;
   robotWidth: number;
   robotLength: number;
@@ -30,6 +31,7 @@ type FieldSimulatorProps = {
 export function FieldSimulator({
   frame,
   trail,
+  showRobotTrail,
   running,
   robotWidth,
   robotLength,
@@ -77,6 +79,7 @@ export function FieldSimulator({
         <FieldScene3D
           frame={frame}
           trail={trail}
+          showRobotTrail={showRobotTrail}
           robotWidth={robotWidth}
           robotLength={robotLength}
           robotId={robotId}

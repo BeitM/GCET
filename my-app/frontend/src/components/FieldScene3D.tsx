@@ -16,11 +16,15 @@ const ARTIFACT_RADIUS = 2.5 * INCHES_TO_METERS;
 const ARTIFACT_CENTER_Y = 0.034 + ARTIFACT_RADIUS;
 const SHOT_RETURN_Y = -24 * INCHES_TO_METERS;
 const ARTIFACT_WALL_CLEARANCE_INCHES = 3.25;
+const MAX_FREE_ARTIFACT_SPEED = 3.2;
+const ARTIFACT_WAKE_DISTANCE = 36 * INCHES_TO_METERS;
+const ARTIFACT_SLEEP_SPEED = 0.16;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 type FieldScene3DProps = {
   frame: TelemetryFrame;
   trail: TelemetryFrame[];
+  showRobotTrail: boolean;
   robotWidth: number;
   robotLength: number;
   robotId: RobotPresetId;
@@ -41,6 +45,14 @@ type FieldMouseCoordinates = { x: number; y: number } | null;
 type ReferenceTextProps = ComponentProps<typeof Text>;
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
 type ArtifactSeed = ArtifactSpec | ArtifactPhysicsState;
+
+function clampBodyVelocity(body: RapierRigidBody, maxSpeed = MAX_FREE_ARTIFACT_SPEED) {
+  const velocity = body.linvel();
+  const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
+  if (speed <= maxSpeed || speed === 0) return;
+  const scale = maxSpeed / speed;
+  body.setLinvel({ x: velocity.x * scale, y: velocity.y * scale, z: velocity.z * scale }, true);
+}
 
 const artifactSpecs: ArtifactSpec[] = [
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
@@ -222,11 +234,38 @@ function Robot({ frame, width, length, running, allianceColor }: { frame: Teleme
   const lengthMeters = length * INCHES_TO_METERS;
   const position = fieldPosition(frame.x, frame.y);
   const chassisRotation = THREE.MathUtils.degToRad(frame.heading - 90);
+  const visualPosition = useRef(new THREE.Vector3(position[0], 0.12, position[2]));
+  const visualRotation = useRef(chassisRotation);
 
-  useFrame(() => {
-    body.current?.setNextKinematicTranslation({ x: position[0], y: 0.12, z: position[2] });
+  useEffect(() => {
+    if (frame.time !== 0) return;
+    visualPosition.current.set(position[0], 0.12, position[2]);
+    visualRotation.current = chassisRotation;
+  }, [chassisRotation, frame.time, position]);
+
+  useFrame((_, delta) => {
+    const targetPosition = new THREE.Vector3(position[0], 0.12, position[2]);
+    const stepDelta = Math.min(delta, 1 / 30);
+
+    if (running) {
+      const toTarget = targetPosition.clone().sub(visualPosition.current);
+      const distance = toTarget.length();
+      const rotationDelta = Math.atan2(Math.sin(chassisRotation - visualRotation.current), Math.cos(chassisRotation - visualRotation.current));
+      const combinedMoveAndTurn = distance > 0.002 && Math.abs(rotationDelta) > THREE.MathUtils.degToRad(0.35);
+      const maxLinearStep = (combinedMoveAndTurn ? 3.25 : 2.1) * stepDelta;
+      if (distance <= maxLinearStep || distance === 0) visualPosition.current.copy(targetPosition);
+      else visualPosition.current.add(toTarget.multiplyScalar(maxLinearStep / distance));
+
+      const maxRotationStep = THREE.MathUtils.degToRad(combinedMoveAndTurn ? 900 : 420) * stepDelta;
+      visualRotation.current += clamp(rotationDelta, -maxRotationStep, maxRotationStep);
+    } else {
+      visualPosition.current.copy(targetPosition);
+      visualRotation.current = chassisRotation;
+    }
+
+    body.current?.setNextKinematicTranslation({ x: visualPosition.current.x, y: visualPosition.current.y, z: visualPosition.current.z });
     body.current?.setNextKinematicRotation(
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, chassisRotation, 0)),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, visualRotation.current, 0)),
     );
   });
 
@@ -359,10 +398,10 @@ function DynamicArtifactBody({
       position={[x, y, z]}
       mass={0.08}
       friction={1.1}
-      restitution={0.28}
-      linearDamping={1.4}
-      angularDamping={0.7}
-      canSleep={false}
+      restitution={0.12}
+      linearDamping={2.2}
+      angularDamping={1.2}
+      canSleep
       ccd
     >
       <BallCollider args={[ARTIFACT_RADIUS]} />
@@ -413,11 +452,23 @@ function DynamicArtifactsRecorder({
       if (returnedArtifacts.current.has(artifact.id)) return [];
       const body = bodies.current[artifact.id];
       if (!body) return [];
+      clampBodyVelocity(body);
       const translation = body.translation();
       const rotation = body.rotation();
 
       const dx = translation.x - robotX;
       const dz = translation.z - robotZ;
+      const distanceToRobot = Math.hypot(dx, dz);
+      const velocity = body.linvel();
+      const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
+      if (distanceToRobot > ARTIFACT_WAKE_DISTANCE && speed < ARTIFACT_SLEEP_SPEED) {
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        body.sleep();
+      } else if (distanceToRobot <= ARTIFACT_WAKE_DISTANCE) {
+        body.wakeUp();
+      }
+
       const localForward = dx * intakeForward.x + dz * intakeForward.z;
       const localRight = dx * intakeRight.x + dz * intakeRight.z;
       const insideIntake = localForward >= frontMin && localForward <= frontMax && Math.abs(localRight) <= sideLimit;
@@ -515,9 +566,9 @@ function DynamicShotBody({
       position={[launch.position.x, launch.position.y, launch.position.z]}
       mass={0.08}
       friction={0.95}
-      restitution={0.22}
-      linearDamping={0.08}
-      angularDamping={0.06}
+      restitution={0.12}
+      linearDamping={0.25}
+      angularDamping={0.15}
       canSleep
       ccd
     >
@@ -555,6 +606,23 @@ function DynamicShotsRecorder({
   }, [trail]);
   const bodies = useRef<Record<number, RapierRigidBody | null>>({});
   const returnedShots = useRef<Set<number>>(new Set());
+  const [retiredShotIds, setRetiredShotIds] = useState<Set<number>>(() => new Set());
+
+  useEffect(() => {
+    returnedShots.current = new Set();
+    setRetiredShotIds(new Set());
+  }, [resetSignal]);
+
+  const retireShot = (shotId: number, body: RapierRigidBody) => {
+    returnedShots.current.add(shotId);
+    retireBody(body);
+    setRetiredShotIds((current) => {
+      if (current.has(shotId)) return current;
+      const next = new Set(current);
+      next.add(shotId);
+      return next;
+    });
+  };
 
   useFrame(() => {
     const [robotX, , robotZ] = fieldPosition(frame.x, frame.y);
@@ -573,25 +641,36 @@ function DynamicShotsRecorder({
 
       const body = bodies.current[shot.id];
       if (!body) return [];
+      clampBodyVelocity(body, Math.max(MAX_FREE_ARTIFACT_SPEED, shot.speed * 1.1));
       const translation = body.translation();
       const rotation = body.rotation();
       const rollEuler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
       const dx = translation.x - robotX;
       const dz = translation.z - robotZ;
+      const distanceToRobot = Math.hypot(dx, dz);
+      const velocity = body.linvel();
+      const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
+      if (distanceToRobot <= ARTIFACT_WAKE_DISTANCE) {
+        body.wakeUp();
+      } else if (speed < ARTIFACT_SLEEP_SPEED && translation.y <= ARTIFACT_CENTER_Y + 0.04) {
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        body.sleep();
+      }
+
       const localForward = dx * intakeForward.x + dz * intakeForward.z;
       const localRight = dx * intakeRight.x + dz * intakeRight.z;
-      const insideIntake = localForward >= frontMin && localForward <= frontMax && Math.abs(localRight) <= sideLimit && translation.y < 0.18;
+      const settledAtIntakeHeight = translation.y <= ARTIFACT_CENTER_Y + 0.055 && speed <= 1.8;
+      const insideIntake = localForward >= frontMin && localForward <= frontMax && Math.abs(localRight) <= sideLimit && settledAtIntakeHeight;
 
       if (canCollect && insideIntake) {
-        returnedShots.current.add(shot.id);
-        retireBody(body);
+        retireShot(shot.id, body);
         onCollect(frameIndex, [`shot-${shot.id}`]);
         return [];
       }
 
       if (translation.y <= SHOT_RETURN_Y) {
-        returnedShots.current.add(shot.id);
-        retireBody(body);
+        retireShot(shot.id, body);
         return [];
       }
 
@@ -608,7 +687,7 @@ function DynamicShotsRecorder({
 
   return (
     <group key={resetSignal}>
-      {shotFrames.map((shotFrame) => (
+      {shotFrames.filter((shotFrame) => !retiredShotIds.has(shotFrame.shot!.id)).map((shotFrame) => (
         <DynamicShotBody
           key={shotFrame.shot!.id}
           shotFrame={shotFrame}
@@ -810,7 +889,7 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
       {!props.recordingPhysics && <RecordedShotArtifacts frame={props.frame} />}
       {!props.running && props.frame.time === 0 && <ArtifactSetupMarkers selectedRows={props.selectedArtifactRows} />}
       {props.showReference && <FieldReference3D coordinateSystem={props.coordinateSystem} />}
-      {props.trail.length > 0 && <RobotTrail trail={props.trail} />}
+      {props.showRobotTrail && props.trail.length > 0 && <RobotTrail trail={props.trail} />}
       <MouseCoordinateTracker enabled={props.showReference} coordinateSystem={props.coordinateSystem} onChange={props.onMouseCoordinates} />
       <OrbitControls makeDefault target={[0, 0, 0]} minDistance={3.2} maxDistance={8} minPolarAngle={0.3} maxPolarAngle={Math.PI / 2.1} enableDamping />
     </>
