@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { AIFeedback, AllianceColor, ArtifactPhysicsState, ArtifactRowId, ControlMode, CoordinateSystem, ScoreBreakdown, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AIFeedback, AIChatMessage, AllianceColor, AnalyzeResponse, ArtifactPhysicsState, ArtifactRowId, ControlMode, CoordinateSystem, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { AIFeedbackPanel } from "@/components/AIFeedbackPanel";
 import { FieldSimulator } from "@/components/FieldSimulator";
 import { InputPanel } from "@/components/InputPanel";
@@ -63,6 +63,11 @@ const TELEOP_DRIVE_SPEED_INCHES_PER_SECOND = 54;
 const TELEOP_TURN_DEGREES_PER_SECOND = 180;
 const TELEOP_SHOT_RPM = 2400;
 const TELEOP_SHOT_ANGLE = 60;
+const AUTONOMOUS_PERIOD_SECONDS = 30;
+const DECODE_ARTIFACT_SCORE_POINTS = 10;
+const DECODE_SHOT_MIN_SPEED = 6.2;
+const DECODE_SHOT_MIN_ANGLE = 32;
+const DECODE_SHOT_MAX_ANGLE = 58;
 const artifactSpecs: ArtifactSpec[] = [
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
   { id: "top-loading-green", row: "topLoading", x: 133.75, y: 138, color: "green" },
@@ -108,6 +113,35 @@ const baseFrame: TelemetryFrame = {
   artifactCount: 0,
   time: 0,
   score: { shotsMade: 0, totalPoints: 0, classifiedShots: 0, overflowShots: 0, wrongGoalShots: 0 },
+  decodeTelemetry: {
+    phase: "autonomous",
+    autonomousScoringTotal: 0,
+    teleOpScoringTotal: 0,
+    artifactCount: {
+      preloaded: 0,
+      collected: 0,
+      stored: 0,
+      fired: 0,
+      controlled: 0,
+    },
+    shotSuccessRate: {
+      successful: 0,
+      attempted: 0,
+      percent: 0,
+    },
+    flywheelEfficiency: {
+      targetRpm: 0,
+      actualRpm: 0,
+      rpmError: 0,
+      percent: 100,
+    },
+    robotVelocity: {
+      linearSpeedInchesPerSecond: 0,
+      speedVariance: 0,
+      averageDrivePower: 0,
+    },
+    ruleViolations: [],
+  },
 };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -431,6 +465,123 @@ function parseRobotCode(source: string): RobotCommand[] {
     .filter(Boolean) as RobotCommand[];
 }
 
+function isDecodeShotSuccessful(speed: number, angle: number, targetRpm: number, actualRpm: number) {
+  return speed >= DECODE_SHOT_MIN_SPEED
+    && angle >= DECODE_SHOT_MIN_ANGLE
+    && angle <= DECODE_SHOT_MAX_ANGLE
+    && targetRpm > 0
+    && actualRpm >= targetRpm * 0.92;
+}
+
+function createDecodeTelemetryMetrics({
+  time,
+  autonomousScoringTotal,
+  teleOpScoringTotal,
+  preloaded,
+  collected,
+  stored,
+  fired,
+  successfulShots,
+  attemptedShots,
+  shooterTarget,
+  shooterRpm,
+  linearSpeed,
+  speedSamples,
+  leftPower,
+  rightPower,
+  ruleViolations,
+}: {
+  time: number;
+  autonomousScoringTotal: number;
+  teleOpScoringTotal: number;
+  preloaded: number;
+  collected: number;
+  stored: number;
+  fired: number;
+  successfulShots: number;
+  attemptedShots: number;
+  shooterTarget: number;
+  shooterRpm: number;
+  linearSpeed: number;
+  speedSamples: number[];
+  leftPower: number;
+  rightPower: number;
+  ruleViolations: DecodeRuleViolation[];
+}): DecodeTelemetryMetrics {
+  const averageSpeed = speedSamples.length ? speedSamples.reduce((sum, speed) => sum + speed, 0) / speedSamples.length : 0;
+  const speedVariance = speedSamples.length
+    ? speedSamples.reduce((sum, speed) => sum + (speed - averageSpeed) ** 2, 0) / speedSamples.length
+    : 0;
+  const rpmError = shooterTarget > 0 ? Math.abs(shooterTarget - shooterRpm) : 0;
+
+  return {
+    phase: time <= AUTONOMOUS_PERIOD_SECONDS ? "autonomous" : "teleop",
+    autonomousScoringTotal,
+    teleOpScoringTotal,
+    artifactCount: {
+      preloaded,
+      collected,
+      stored,
+      fired,
+      controlled: stored,
+    },
+    shotSuccessRate: {
+      successful: successfulShots,
+      attempted: attemptedShots,
+      percent: attemptedShots > 0 ? Math.round(successfulShots / attemptedShots * 100) : 0,
+    },
+    flywheelEfficiency: {
+      targetRpm: shooterTarget,
+      actualRpm: shooterRpm,
+      rpmError,
+      percent: shooterTarget > 0 ? Math.round(clamp(shooterRpm / shooterTarget, 0, 1) * 100) : 100,
+    },
+    robotVelocity: {
+      linearSpeedInchesPerSecond: linearSpeed,
+      speedVariance,
+      averageDrivePower: (Math.abs(leftPower) + Math.abs(rightPower)) / 2,
+    },
+    ruleViolations,
+  };
+}
+
+function createSetupFrame(
+  pose: StartPose,
+  preloadCount: number,
+  selectedRows: ArtifactRowId[],
+  status: Pick<TelemetryFrame, "event" | "warning"> = { event: "Ready" },
+  ruleViolations: DecodeRuleViolation[] = [],
+): TelemetryFrame {
+  const safePreloadCount = Math.round(clamp(preloadCount, 0, 3));
+
+  return {
+    ...baseFrame,
+    ...pose,
+    artifactCount: safePreloadCount,
+    artifacts: cloneArtifactFrameState(createArtifacts(selectedRows)),
+    score: emptyScore(),
+    decodeTelemetry: createDecodeTelemetryMetrics({
+      time: 0,
+      autonomousScoringTotal: 0,
+      teleOpScoringTotal: 0,
+      preloaded: safePreloadCount,
+      collected: 0,
+      stored: safePreloadCount,
+      fired: 0,
+      successfulShots: 0,
+      attemptedShots: 0,
+      shooterTarget: 0,
+      shooterRpm: 0,
+      linearSpeed: 0,
+      speedSamples: [],
+      leftPower: 0,
+      rightPower: 0,
+      ruleViolations,
+    }),
+    ...status,
+  };
+}
+
 function generateRobotCodeFrames(
   source: string,
   startPose: StartPose,
@@ -444,7 +595,6 @@ function generateRobotCodeFrames(
   const safePreloadCount = Math.round(clamp(preloadCount, 0, 3));
   const startFrame = { ...baseFrame, ...startPose, artifactCount: safePreloadCount };
   const artifacts = createArtifacts(selectedRows);
-  const frames: TelemetryFrame[] = [{ ...startFrame, artifacts: cloneArtifactFrameState(artifacts), event: "Ready" }];
   let current = { ...startPose };
   let time = 0;
   let leftEncoder = 0;
@@ -454,10 +604,32 @@ function generateRobotCodeFrames(
   let intake: TelemetryFrame["intake"] = "off";
   let artifactCount = safePreloadCount;
   let shotId = 0;
+  let collectedArtifacts = 0;
+  let firedArtifacts = 0;
+  let successfulShots = 0;
+  let autonomousScoringTotal = 0;
+  let teleOpScoringTotal = 0;
+  let lastTelemetryPose = { ...startPose };
+  let lastTelemetryTime = 0;
   const shots: { time: number; speed: number; angle: number }[] = [];
   const blockedIntakeArtifacts = new Set<string>();
+  const speedSamples: number[] = [];
+  const ruleViolations: DecodeRuleViolation[] = [];
+  const frames: TelemetryFrame[] = [];
+
+  const addRuleViolation = (code: DecodeRuleViolation["code"], message: string, severity: DecodeRuleViolation["severity"] = "warning") => {
+    ruleViolations.push({ code, severity, message, time });
+  };
 
   const pushFrame = (overrides: Partial<TelemetryFrame> = {}) => {
+    const leftPowerValue = overrides.leftPower ?? 0;
+    const rightPowerValue = overrides.rightPower ?? 0;
+    const dt = Math.max(time - lastTelemetryTime, SIMULATION_FRAME_SECONDS);
+    const linearSpeed = Math.hypot(current.x - lastTelemetryPose.x, current.y - lastTelemetryPose.y) / dt;
+    if (linearSpeed > 0 || leftPowerValue !== 0 || rightPowerValue !== 0) speedSamples.push(linearSpeed);
+    lastTelemetryPose = { ...current };
+    lastTelemetryTime = time;
+
     frames.push({
       ...startFrame,
       ...current,
@@ -469,9 +641,29 @@ function generateRobotCodeFrames(
       intake,
       artifactCount,
       artifacts: cloneArtifactFrameState(artifacts),
+      decodeTelemetry: createDecodeTelemetryMetrics({
+        time,
+        autonomousScoringTotal,
+        teleOpScoringTotal,
+        preloaded: safePreloadCount,
+        collected: collectedArtifacts,
+        stored: artifactCount,
+        fired: firedArtifacts,
+        successfulShots,
+        attemptedShots: shotId,
+        shooterTarget,
+        shooterRpm,
+        linearSpeed,
+        speedSamples,
+        leftPower: leftPowerValue,
+        rightPower: rightPowerValue,
+        ruleViolations: [...ruleViolations],
+      }),
       ...overrides,
     });
   };
+  pushFrame({ event: "Ready" });
+
   const stepPhysicsTo = (nextPose: StartPose, dt: number) => {
     const previous = current;
     current = constrainRobotPose(nextPose, robotWidth, robotLength);
@@ -500,6 +692,7 @@ function generateRobotCodeFrames(
     const artifact = artifacts[contactIndex];
     if (artifactCount < 3) {
       artifactCount += 1;
+      collectedArtifacts += 1;
       artifacts.splice(contactIndex, 1);
       blockedIntakeArtifacts.delete(artifact.id);
       return `collected artifact ${artifactCount}`;
@@ -509,6 +702,7 @@ function generateRobotCodeFrames(
     artifact.vy += forward.y * 22;
     if (blockedIntakeArtifacts.has(artifact.id)) return "";
     blockedIntakeArtifacts.add(artifact.id);
+    addRuleViolation("ARTIFACT_CONTROL", "Robot attempted to control more than 3 artifacts.", "major");
     return "controlled 4 artifacts";
   };
   const releaseStoredArtifacts = () => {
@@ -616,14 +810,10 @@ function generateRobotCodeFrames(
   };
 
   if (commands.length === 0) {
-    return [
-      ...frames,
-      {
-        ...startFrame,
-        time: 0.1,
-        warning: "No supported robot code actions parsed",
-      },
-    ];
+    time = 0.1;
+    addRuleViolation("CONTROL_LIMIT", "No supported robot code actions were parsed.");
+    pushFrame({ warning: "No supported robot code actions parsed" });
+    return frames;
   }
 
   for (const command of commands) {
@@ -653,6 +843,9 @@ function generateRobotCodeFrames(
       }
 
       const safeTarget = constrainRobotPose(target, robotWidth, robotLength);
+      if (Math.abs(safeTarget.x - target.x) > 0.001 || Math.abs(safeTarget.y - target.y) > 0.001) {
+        addRuleViolation("FIELD_BOUNDARY", `Drive command was clamped to keep the ${robotWidth} x ${robotLength} in robot inside the field.`);
+      }
       advanceDrive(safeTarget, `drive ${command.direction} ${distance.toFixed(1)} in`, false);
     }
 
@@ -668,6 +861,9 @@ function generateRobotCodeFrames(
         robotWidth,
         robotLength,
       );
+      if (Math.abs(target.x - targetPosition.x) > 0.001 || Math.abs(target.y - targetPosition.y) > 0.001) {
+        addRuleViolation("FIELD_BOUNDARY", `driveToPosition target was clamped to remain inside the DECODE field.`);
+      }
       advanceDrive(
         target,
         hasHeading ? `driveToPosition ${command.x}, ${command.y}, ${command.heading}` : `driveToPosition ${command.x}, ${command.y}`,
@@ -697,6 +893,7 @@ function generateRobotCodeFrames(
       if (artifactCount <= 0) {
         time += 0.1;
         stepArtifactPhysics(artifacts, current, current, robotWidth, robotLength, 0.1);
+        addRuleViolation("CONTROL_LIMIT", "Shoot command ran without a loaded artifact.");
         pushFrame({
           feeder: false,
           event: `Shoot ${command.angle.toFixed(0)} deg`,
@@ -707,13 +904,20 @@ function generateRobotCodeFrames(
 
       shotId += 1;
       artifactCount -= 1;
+      firedArtifacts += 1;
       const shotSpeed = Math.max(0.5, shooterRpm / 3600 * 8);
+      const scored = isDecodeShotSuccessful(shotSpeed, command.angle, shooterTarget, shooterRpm);
+      if (scored) {
+        successfulShots += 1;
+        if (time <= AUTONOMOUS_PERIOD_SECONDS) autonomousScoringTotal += DECODE_ARTIFACT_SCORE_POINTS;
+        else teleOpScoringTotal += DECODE_ARTIFACT_SCORE_POINTS;
+      }
       time += SIMULATION_FRAME_SECONDS;
       stepArtifactPhysics(artifacts, current, current, robotWidth, robotLength, SIMULATION_FRAME_SECONDS);
       shots.push({ time, speed: shotSpeed, angle: command.angle });
       pushFrame({
         feeder: true,
-        event: `Shoot ${command.angle.toFixed(0)} deg`,
+        event: scored ? `Shoot ${command.angle.toFixed(0)} deg; scored artifact` : `Shoot ${command.angle.toFixed(0)} deg; missed trajectory`,
         shot: { id: shotId, speed: shotSpeed, angle: command.angle },
       });
       advanceWait(0.2);
@@ -825,6 +1029,9 @@ export default function SimulatorDashboard() {
   const [runId, setRunId] = useState(0);
   const [playbackId, setPlaybackId] = useState(0);
   const [analysis, setAnalysis] = useState<AIFeedback | null>(null);
+  const [chatMessages, setChatMessages] = useState<AIChatMessage[]>([]);
+  const [analysisPending, setAnalysisPending] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
   const [setupWarning, setSetupWarning] = useState("");
   const [liveScore, setLiveScore] = useState<ScoreBreakdown>(emptyScore());
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -835,6 +1042,7 @@ export default function SimulatorDashboard() {
   const physicsRecordingArtifacts = useRef<Map<number, ArtifactPhysicsState[]>>(new Map());
   const physicsCollectedArtifacts = useRef<Set<string>>(new Set());
   const physicsRecordingShots = useRef<Map<number, ShotPhysicsState[]>>(new Map());
+  const lastAutoAnalysisRun = useRef<number | null>(null);
 
   const code = controlMode === "autonomous" ? autonomousCode : teleopCode;
   const setCode = controlMode === "autonomous" ? setAutonomousCode : setTeleopCode;
@@ -843,13 +1051,6 @@ export default function SimulatorDashboard() {
   const displayFrame = running && liveScore.totalPoints > frameScore.totalPoints ? { ...frame, score: liveScore } : frame;
   const events = frames.slice(0, index + 1).filter((item) => item.event || item.warning);
   const displayStartPosition = displayPositionFromField({ x: startX, y: startY, heading: startHeading }, coordinateSystem);
-  const readyFrame = (pose: StartPose, artifactCount = preloadCount): TelemetryFrame => ({
-    ...baseFrame,
-    ...pose,
-    artifactCount,
-    artifacts: cloneArtifactFrameState(createArtifacts(selectedArtifactRows)),
-    event: "Ready",
-  });
   const resetLiveScore = () => {
     const next = emptyScore();
     liveScoreRef.current = next;
@@ -898,10 +1099,11 @@ export default function SimulatorDashboard() {
   const previewStartPose = (pose: StartPose) => {
     stopPlayback();
     setPlaybackId((id) => id + 1);
-    setFrames([readyFrame(pose)]);
+    setFrames([createSetupFrame(pose, preloadCount, selectedArtifactRows)]);
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
   };
@@ -911,10 +1113,11 @@ export default function SimulatorDashboard() {
     setPreloadCount(next);
     stopPlayback();
     setPlaybackId((id) => id + 1);
-    setFrames([readyFrame({ x: startX, y: startY, heading: startHeading }, next)]);
+    setFrames([createSetupFrame({ x: startX, y: startY, heading: startHeading }, next, selectedArtifactRows)]);
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
   };
@@ -923,10 +1126,11 @@ export default function SimulatorDashboard() {
     setAllianceColor(value);
     stopPlayback();
     setPlaybackId((id) => id + 1);
-    setFrames([readyFrame({ x: startX, y: startY, heading: startHeading }, preloadCount)]);
+    setFrames([createSetupFrame({ x: startX, y: startY, heading: startHeading }, preloadCount, selectedArtifactRows)]);
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
   };
@@ -1137,10 +1341,11 @@ export default function SimulatorDashboard() {
     stopPlayback();
     setPlaybackId((id) => id + 1);
     setControlModeState(value);
-    setFrames([readyFrame({ x: startX, y: startY, heading: startHeading }, preloadCount)]);
+    setFrames([createSetupFrame({ x: startX, y: startY, heading: startHeading }, preloadCount, selectedArtifactRows)]);
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
   };
@@ -1267,16 +1472,25 @@ export default function SimulatorDashboard() {
     if (!isRobotPoseInsideField(startPose, robotWidth, robotLength)) {
       stopPlayback();
       setPlaybackId((id) => id + 1);
-      setFrames([{ ...readyFrame(startPose), warning: "Invalid start position" }]);
+      setFrames([createSetupFrame(
+        startPose,
+        preloadCount,
+        selectedArtifactRows,
+        { warning: "Invalid start position" },
+        [{ code: "ROBOT_BOUNDS", severity: "major", message: "Starting robot footprint is outside the DECODE field boundary.", time: 0 }],
+      )]);
       setIndex(0);
       setHasRun(false);
       setAnalysis(null);
+      setChatMessages([]);
       setSetupWarning("Invalid start position");
       return;
     }
 
     setRunId((id) => id + 1);
     setAnalysis(null);
+    setChatMessages([]);
+    setAnalysisError("");
     setSetupWarning("");
     setHasRun(false);
     resetLiveScore();
@@ -1301,10 +1515,39 @@ export default function SimulatorDashboard() {
     setIndex(nextIndex);
   };
 
-  const showFeedbackPlaceholder = () => {
-    setAnalysis(placeholderFeedback);
-    setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  };
+  const requestAnalysis = useCallback(async (question?: string) => {
+    const userMessage: AIChatMessage | null = question
+      ? { id: `user-${Date.now()}`, role: "user", content: question, createdAt: Date.now() }
+      : null;
+    const nextMessages = userMessage ? [...chatMessages, userMessage] : chatMessages;
+    if (userMessage) setChatMessages(nextMessages);
+
+    setAnalysisPending(true);
+    setAnalysisError("");
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal, frames, messages: nextMessages, question }),
+      });
+      if (!response.ok) throw new Error(`Analyze failed with ${response.status}`);
+      const result = await response.json() as AnalyzeResponse;
+      setAnalysis(result.feedback);
+      setChatMessages((current) => [...current, result.assistantMessage]);
+      setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    } catch (error) {
+      setAnalysis(placeholderFeedback);
+      setAnalysisError(error instanceof Error ? error.message : "Analyze request failed");
+    } finally {
+      setAnalysisPending(false);
+    }
+  }, [chatMessages, frames, goal]);
+
+  useEffect(() => {
+    if (!hasRun || running || frames.length <= 1 || lastAutoAnalysisRun.current === runId) return;
+    lastAutoAnalysisRun.current = runId;
+    void requestAnalysis();
+  }, [frames.length, hasRun, requestAnalysis, runId, running]);
 
   useEffect(() => {
     if (controlMode !== "teleop") {
@@ -1384,7 +1627,7 @@ export default function SimulatorDashboard() {
           onRobot={selectRobot}
           onRun={run}
           onStop={stopSimulation}
-          onAnalyze={showFeedbackPlaceholder}
+          onAnalyze={() => void requestAnalysis()}
           canAnalyze={hasRun}
         />
         <div className="workspace">
@@ -1419,7 +1662,14 @@ export default function SimulatorDashboard() {
           </div>
           {(hasRun || analysis) && (
             <div id="analysis">
-              <AIFeedbackPanel data={analysis} goal={goal} />
+              <AIFeedbackPanel
+                data={analysis}
+                goal={goal}
+                messages={chatMessages}
+                pending={analysisPending}
+                error={analysisError}
+                onSend={(question) => void requestAnalysis(question)}
+              />
             </div>
           )}
         </div>

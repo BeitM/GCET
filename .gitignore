@@ -3,3 +3,6 @@
 
 ai_task.md
 frontend-dev-3000.log
+.codex_state.json
+*.pdf
+loop_prompt.md
