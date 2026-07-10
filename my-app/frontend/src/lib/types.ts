@@ -64,7 +64,7 @@ export type TelemetryFrame = RobotState & {
   decodeTelemetry?:DecodeTelemetryMetrics;
 };
 
-export type AIFeedback = { headline:string; status:"warning"|"complete"; happened:string; cause:string; evidence:string[]; fix:string; optimization:string; concept:string; summaryMarkdown?:string };
+export type AIFeedback = { headline:string; status:"warning"|"complete"; happened:string; cause:string; evidence:string[]; fix:string; optimization:string; concept:string; nextTest?:string; summaryMarkdown?:string };
 
 export type AIChatMessage = {
   id:string;

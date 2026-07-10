@@ -441,10 +441,10 @@ export function InputPanel({
         )}
         <button className="button analyze-button" disabled={!canAnalyze || running} onClick={onAnalyze}>
           <span>*</span>
-          Feedback placeholder
+          Analyze run
         </button>
         {setupWarning && <p className="action-warning">{setupWarning}</p>}
-        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock the feedback placeholder.</p>}
+        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock AI feedback.</p>}
       </div>
     </aside>
     {mounted && commandReferenceWindow ? createPortal(commandReferenceWindow, document.body) : null}

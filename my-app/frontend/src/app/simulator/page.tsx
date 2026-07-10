@@ -960,15 +960,15 @@ function generateRobotCodeFrames(
 
 const THREE_DEGREES_TO_RADIANS = Math.PI / 180;
 
-const placeholderFeedback: AIFeedback = {
-  headline: "AI feedback placeholder",
-  status: "complete",
-  happened: "The robot code ran in the simulator and produced telemetry, but AI analysis is not connected yet.",
-  cause: "This button is reserved for the future analysis pipeline that will compare robot intent, code, and telemetry.",
-  evidence: ["Telemetry frames were generated locally", "No external AI model was called", "Local robot-code parsing is active"],
-  fix: "Keep using the run controls to validate simulated movement while the feedback integration is built.",
-  optimization: "Future versions can replace this placeholder with model-generated debugging guidance.",
-  concept: "The simulator and analysis layers are intentionally separate so robot behavior can mature before AI feedback is wired in.",
+const analysisUnavailableFeedback: AIFeedback = {
+  headline: "AI analysis unavailable",
+  status: "warning",
+  happened: "The simulator produced telemetry, but the analysis request did not complete.",
+  cause: "The local analysis route or external AI provider returned an error.",
+  evidence: ["Telemetry frames were generated locally", "The analysis request failed before returning a usable response"],
+  fix: "Try running analysis again after the dev server finishes compiling. If it keeps failing, check the browser console and API route logs.",
+  optimization: "The simulator data is still available in the scoring and telemetry panels.",
+  concept: "Simulation playback and AI analysis are separate layers, so a temporary AI failure should not invalidate the recorded run.",
 };
 
 function ScorePanel({ frame }: { frame: TelemetryFrame }) {
@@ -1532,11 +1532,11 @@ export default function SimulatorDashboard() {
       });
       if (!response.ok) throw new Error(`Analyze failed with ${response.status}`);
       const result = await response.json() as AnalyzeResponse;
-      setAnalysis(result.feedback);
-      setChatMessages((current) => [...current, result.assistantMessage]);
+      if (!question) setAnalysis(result.feedback);
+      if (question) setChatMessages((current) => [...current, result.assistantMessage]);
       setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
     } catch (error) {
-      setAnalysis(placeholderFeedback);
+      if (!question) setAnalysis(analysisUnavailableFeedback);
       setAnalysisError(error instanceof Error ? error.message : "Analyze request failed");
     } finally {
       setAnalysisPending(false);

@@ -75,6 +75,12 @@ ${data.fix}
 OPTIMIZATION
 ${data.optimization}
 
+NEXT TEST
+${data.nextTest || ""}
+
+HOW IT IS CHECKED
+${data.concept}
+
 SUMMARY
 ${data.summaryMarkdown || ""}` : "";
 
@@ -99,7 +105,7 @@ ${data.summaryMarkdown || ""}` : "";
         <div className="ai-orb">*</div>
         <span className="kicker">AI MENTOR</span>
         <h2>Ready when you are.</h2>
-        <p>Run the robot code to generate DECODE telemetry.</p>
+        <p>Run the simulation to generate DECODE telemetry and scoring context.</p>
       </section>
     );
   }
@@ -117,34 +123,61 @@ ${data.summaryMarkdown || ""}` : "";
       {error && <div className="ai-error">{error}</div>}
 
       {data && (
-        <>
-          <div className="feedback-lead"><span>WHAT HAPPENED</span><p>{data.happened}</p></div>
-          {data.summaryMarkdown && <MarkdownBlock text={data.summaryMarkdown} />}
-          <div className="feedback-grid">
-            <article><span>LIKELY CAUSE</span><p>{data.cause}</p></article>
-            <article className="evidence"><span>TELEMETRY EVIDENCE</span><ul>{data.evidence.map((item) => <li key={item}>{item}</li>)}</ul></article>
-            <article className="fix"><span>SUGGESTED FIX</span><p>{data.fix}</p></article>
-            <article><span>OPTIMIZATION IDEA</span><p>{data.optimization}</p></article>
+        <div className="ai-feedback-body">
+          <div className="ai-goal-card">
+            <span>INTENDED GOAL</span>
+            <p>{goal.trim() || "No specific goal entered."}</p>
           </div>
-          <div className="concept"><b>CONCEPT // WHY THIS WORKS</b><p>{data.concept}</p></div>
-        </>
+          <div className="feedback-lead">
+            <span>RESULT</span>
+            <p>{data.happened}</p>
+          </div>
+          <div className="feedback-grid">
+            <article className="fix"><span>ACTION</span><p>{data.fix}</p></article>
+            <article><span>WHY</span><p>{data.cause}</p></article>
+            <article><span>NEXT TEST</span><p>{data.nextTest || "Repeat the run and compare the score, shot count, and warnings."}</p></article>
+            <article><span>POSSIBLE OPTIMIZATION</span><p>{data.optimization}</p></article>
+          </div>
+          <details className="ai-evidence">
+            <summary>Telemetry used</summary>
+            <ul>{data.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+          </details>
+          {data.summaryMarkdown && (
+            <details className="ai-notes">
+              <summary>AI notes</summary>
+              <div className="ai-note-check">
+                <span>HOW IT IS CHECKED</span>
+                <p>{data.concept}</p>
+              </div>
+              <MarkdownBlock text={data.summaryMarkdown} />
+            </details>
+          )}
+        </div>
       )}
 
-      <div className="chat-thread">
-        {messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)}
-        {pending && <div className="chat-message assistant pending"><span>AI Assistant</span><p>Analyzing telemetry...</p></div>}
-        <div ref={chatEndRef} />
-      </div>
+      <div className="ai-chat-panel">
+        <div className="ai-chat-head">
+          <span>FOLLOW-UP</span>
+          <p>Ask about scoring, RPM, path legality, or rule risk.</p>
+        </div>
+        {(messages.length > 0 || pending) && (
+          <div className="chat-thread">
+            {messages.map((message) => <ChatMessageBubble key={message.id} message={message} />)}
+            {pending && <div className="chat-message assistant pending"><span>AI Assistant</span><p>Analyzing telemetry...</p></div>}
+            <div ref={chatEndRef} />
+          </div>
+        )}
 
-      <form className="chat-input" onSubmit={submit}>
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          disabled={pending}
-          placeholder="Ask about scoring, RPM, path legality, or rule risk"
-        />
-        <button type="submit" disabled={pending || !draft.trim()}>Send</button>
-      </form>
+        <form className="chat-input" onSubmit={submit}>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={pending}
+            placeholder="Ask a follow-up"
+          />
+          <button type="submit" disabled={pending || !draft.trim()}>Send</button>
+        </form>
+      </div>
 
       {data && (
         <div className="report-tools">
