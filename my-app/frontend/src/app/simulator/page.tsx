@@ -8,6 +8,7 @@ import { FieldSimulator } from "@/components/FieldSimulator";
 import { InputPanel } from "@/components/InputPanel";
 import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
+import { selectAnalysisFrames } from "@/lib/analysis";
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -262,10 +263,17 @@ const applyScoringToFrames = (recorded: TelemetryFrame[], allianceColor: Allianc
         warning = `Wrong goal: shot ${shot.id} passed through ${goal} classifier`;
       } else {
         score.shotsMade += 1;
-        score.classifiedShots += 1;
-        score.totalPoints += 3;
-        frameScoreEvent = { shotId: shot.id, goal, result: "classified", points: 3 };
-        event = event ? `${event}; Classified shot ${shot.id} +3` : `Classified shot ${shot.id} +3`;
+        if (score.classifiedShots < CLASSIFIED_CAPACITY) {
+          score.classifiedShots += 1;
+          score.totalPoints += 3;
+          frameScoreEvent = { shotId: shot.id, goal, result: "classified", points: 3 };
+          event = event ? `${event}; Classified shot ${shot.id} +3` : `Classified shot ${shot.id} +3`;
+        } else {
+          score.overflowShots += 1;
+          score.totalPoints += 1;
+          frameScoreEvent = { shotId: shot.id, goal, result: "overflow", points: 1 };
+          event = event ? `${event}; Overflow shot ${shot.id} +1` : `Overflow shot ${shot.id} +1`;
+        }
       }
     }
 
@@ -1605,6 +1613,7 @@ export default function SimulatorDashboard() {
       ? { id: `user-${Date.now()}`, role: "user", content: question, createdAt: Date.now() }
       : null;
     const nextMessages = userMessage ? [...chatMessages, userMessage] : chatMessages;
+    const requestMessages = nextMessages.slice(-8);
     if (userMessage) setChatMessages(nextMessages);
 
     setAnalysisPending(true);
@@ -1613,7 +1622,29 @@ export default function SimulatorDashboard() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal, frames, messages: nextMessages, question }),
+        body: JSON.stringify({
+          goal,
+          code,
+          robotSetup: {
+            robotId,
+            robotName: robotPresets.find((robot) => robot.id === robotId)?.name || robotId,
+            width: robotWidth,
+            length: robotLength,
+            allianceColor,
+            coordinateSystem,
+            controlMode,
+            startPose: {
+              x: displayStartPosition.x,
+              y: displayStartPosition.y,
+              heading: startHeading,
+            },
+            preloadCount,
+            selectedArtifactRows,
+          },
+          frames: selectAnalysisFrames(frames),
+          messages: requestMessages,
+          question,
+        }),
       });
       if (!response.ok) throw new Error(`Analyze failed with ${response.status}`);
       const result = await response.json() as AnalyzeResponse;
@@ -1626,7 +1657,7 @@ export default function SimulatorDashboard() {
     } finally {
       setAnalysisPending(false);
     }
-  }, [chatMessages, frames, goal]);
+  }, [allianceColor, chatMessages, code, controlMode, coordinateSystem, displayStartPosition.x, displayStartPosition.y, frames, goal, preloadCount, robotId, robotLength, robotWidth, selectedArtifactRows, startHeading]);
 
   useEffect(() => {
     if (controlMode !== "autonomous" || !hasRun || running || frames.length <= 1 || lastAutoAnalysisRun.current === runId) return;
@@ -1645,6 +1676,7 @@ export default function SimulatorDashboard() {
       const tagName = target.tagName.toLowerCase();
       return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
     };
+    const pressedKeys = teleopKeys.current;
     const controlKeys = new Set(["w", "a", "s", "d", "z", "arrowleft", "arrowright", " "]);
     const handleKeyDown = (event: KeyboardEvent) => {
       const key = event.code === "Space" ? " " : event.key.toLowerCase();
@@ -1654,12 +1686,12 @@ export default function SimulatorDashboard() {
         fireTeleopShot();
         return;
       }
-      if (key !== " ") teleopKeys.current.add(key);
+      if (key !== " ") pressedKeys.add(key);
     };
     const handleKeyUp = (event: KeyboardEvent) => {
       const key = event.code === "Space" ? " " : event.key.toLowerCase();
       if (!controlKeys.has(key)) return;
-      teleopKeys.current.delete(key);
+      pressedKeys.delete(key);
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1667,7 +1699,7 @@ export default function SimulatorDashboard() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      teleopKeys.current.clear();
+      pressedKeys.clear();
     };
     // TeleOp actions read mutable refs so this should only rebind on mode/run state changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

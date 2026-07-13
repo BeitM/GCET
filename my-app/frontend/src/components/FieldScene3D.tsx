@@ -440,11 +440,6 @@ function DynamicArtifactsRecorder({
   const returnedArtifacts = useRef<Set<string>>(new Set());
   const [retiredArtifactIds, setRetiredArtifactIds] = useState<Set<string>>(() => new Set());
 
-  useEffect(() => {
-    returnedArtifacts.current = new Set();
-    setRetiredArtifactIds(new Set());
-  }, [resetSignal]);
-
   const retireArtifact = (artifactId: string, body: RapierRigidBody) => {
     returnedArtifacts.current.add(artifactId);
     retireBody(body);
@@ -623,11 +618,6 @@ function DynamicShotsRecorder({
   const bodies = useRef<Record<number, RapierRigidBody | null>>({});
   const returnedShots = useRef<Set<number>>(new Set());
   const [retiredShotIds, setRetiredShotIds] = useState<Set<number>>(() => new Set());
-
-  useEffect(() => {
-    returnedShots.current = new Set();
-    setRetiredShotIds(new Set());
-  }, [resetSignal]);
 
   const retireShot = (shotId: number, body: RapierRigidBody) => {
     returnedShots.current.add(shotId);
@@ -873,6 +863,7 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
         {props.recordingPhysics && (
           <>
             <DynamicArtifactsRecorder
+              key={`artifacts-${props.ballResetSignal}`}
               frame={props.frame}
               selectedRows={props.selectedArtifactRows}
               initialArtifacts={props.frame.artifacts}
@@ -884,6 +875,7 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
               onCollect={props.onPhysicsArtifactCollected}
             />
             <DynamicShotsRecorder
+              key={`shots-${props.ballResetSignal}`}
               frame={props.frame}
               trail={props.trail}
               robotLength={props.robotLength}
@@ -918,7 +910,7 @@ export function FieldScene3D(props: FieldScene3DProps) {
 
   return (
     <div className="field-scene-3d" aria-label="Interactive 3D DECODE field simulation">
-      <Canvas shadows dpr={[1, 1.75]} camera={{ position: [4.5, 4.6, 5.2], fov: 42, near: 0.1, far: 50 }}>
+      <Canvas shadows={{ type: THREE.PCFShadowMap }} dpr={[1, 1.75]} camera={{ position: [4.5, 4.6, 5.2], fov: 42, near: 0.1, far: 50 }}>
         <Suspense fallback={null}><Scene {...props} showReference={showReference} onMouseCoordinates={setMouseCoordinates} /></Suspense>
       </Canvas>
       <button type="button" className={`field-reference-toggle ${showReference ? "active" : ""}`} onClick={() => setShowReference((current) => !current)}>

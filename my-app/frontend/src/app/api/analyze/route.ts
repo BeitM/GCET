@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { AIChatMessage, AIFeedback, AnalyzeRequest, AnalyzeResponse, DecodeRuleViolation, ScoreBreakdown, ScoreEvent, TelemetryFrame } from "@/lib/types";
+import type { AIChatMessage, AIFeedback, AnalyzeRequest, AnalyzeResponse, AnalyzeRobotSetup, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ScoreEvent, TelemetryFrame } from "@/lib/types";
+import { selectAnalysisFrames } from "@/lib/analysis";
 
 export const runtime = "nodejs";
 
@@ -49,10 +50,181 @@ type GoalFailure = {
   optimization: string;
 };
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+type JsonRecord = Record<string, unknown>;
+
+const MAX_REQUEST_BYTES = 2_000_000;
+const MAX_CHAT_MESSAGES = 8;
+const MAX_RULE_VIOLATIONS = 50;
+const ruleCodes: DecodeRuleViolation["code"][] = ["FIELD_BOUNDARY", "ROBOT_BOUNDS", "CONTROL_LIMIT", "ARTIFACT_CONTROL"];
+const artifactRows: AnalyzeRobotSetup["selectedArtifactRows"] = ["topLoading", "topLeft", "topCenter", "topRight", "bottomLeft", "bottomCenter", "bottomRight", "bottomLoading"];
+
+const isRecord = (value: unknown): value is JsonRecord => typeof value === "object" && value !== null;
+const safeNumber = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const safeCount = (value: unknown) => Math.max(0, Math.round(safeNumber(value)));
+const safeText = (value: unknown, fallback: string, maxLength: number) => typeof value === "string" ? value.slice(0, maxLength) : fallback;
+const optionalText = (value: unknown, maxLength: number) => typeof value === "string" && value.trim() ? value.slice(0, maxLength) : undefined;
+
+function sanitizeScore(value: unknown): ScoreBreakdown | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    shotsMade: safeCount(value.shotsMade),
+    totalPoints: safeCount(value.totalPoints),
+    classifiedShots: safeCount(value.classifiedShots),
+    overflowShots: safeCount(value.overflowShots),
+    wrongGoalShots: safeCount(value.wrongGoalShots),
+  };
+}
+
+function sanitizeRuleViolation(value: unknown): DecodeRuleViolation | null {
+  if (!isRecord(value) || !ruleCodes.includes(value.code as DecodeRuleViolation["code"])) return null;
+  return {
+    code: value.code as DecodeRuleViolation["code"],
+    severity: value.severity === "major" ? "major" : "warning",
+    message: safeText(value.message, "Rule warning", 240),
+    time: Math.max(0, safeNumber(value.time)),
+  };
+}
+
+function sanitizeDecodeTelemetry(value: unknown): DecodeTelemetryMetrics | undefined {
+  if (!isRecord(value)) return undefined;
+  const artifactCount = isRecord(value.artifactCount) ? value.artifactCount : {};
+  const shotSuccessRate = isRecord(value.shotSuccessRate) ? value.shotSuccessRate : {};
+  const flywheelEfficiency = isRecord(value.flywheelEfficiency) ? value.flywheelEfficiency : {};
+  const robotVelocity = isRecord(value.robotVelocity) ? value.robotVelocity : {};
+  const ruleViolations = Array.isArray(value.ruleViolations)
+    ? value.ruleViolations.slice(0, MAX_RULE_VIOLATIONS).map(sanitizeRuleViolation).filter((item): item is DecodeRuleViolation => item !== null)
+    : [];
+
+  return {
+    phase: value.phase === "teleop" ? "teleop" : "autonomous",
+    autonomousScoringTotal: safeCount(value.autonomousScoringTotal),
+    teleOpScoringTotal: safeCount(value.teleOpScoringTotal),
+    artifactCount: {
+      preloaded: safeCount(artifactCount.preloaded),
+      collected: safeCount(artifactCount.collected),
+      stored: safeCount(artifactCount.stored),
+      fired: safeCount(artifactCount.fired),
+      controlled: safeCount(artifactCount.controlled),
+    },
+    shotSuccessRate: {
+      successful: safeCount(shotSuccessRate.successful),
+      attempted: safeCount(shotSuccessRate.attempted),
+      percent: safeNumber(shotSuccessRate.percent),
+    },
+    flywheelEfficiency: {
+      targetRpm: safeNumber(flywheelEfficiency.targetRpm),
+      actualRpm: safeNumber(flywheelEfficiency.actualRpm),
+      rpmError: safeNumber(flywheelEfficiency.rpmError),
+      percent: safeNumber(flywheelEfficiency.percent, 100),
+    },
+    robotVelocity: {
+      linearSpeedInchesPerSecond: safeNumber(robotVelocity.linearSpeedInchesPerSecond),
+      speedVariance: safeNumber(robotVelocity.speedVariance),
+      averageDrivePower: safeNumber(robotVelocity.averageDrivePower),
+    },
+    ruleViolations,
+  };
+}
+
+function sanitizeTelemetryFrame(value: unknown): TelemetryFrame | null {
+  if (!isRecord(value)) return null;
+  const shot = isRecord(value.shot) ? {
+    id: safeCount(value.shot.id),
+    speed: safeNumber(value.shot.speed),
+    angle: safeNumber(value.shot.angle),
+  } : undefined;
+  const scoreEventValue = isRecord(value.scoreEvent) ? value.scoreEvent : null;
+  const scoreEventResult = scoreEventValue?.result;
+  const scoreEvent = scoreEventValue && (scoreEventValue.goal === "blue" || scoreEventValue.goal === "red")
+    && (scoreEventResult === "classified" || scoreEventResult === "overflow" || scoreEventResult === "wrongGoal")
+    ? {
+      shotId: safeCount(scoreEventValue.shotId),
+      goal: scoreEventValue.goal,
+      result: scoreEventResult,
+      points: safeCount(scoreEventValue.points),
+    } satisfies ScoreEvent
+    : undefined;
+  const intake: TelemetryFrame["intake"] = value.intake === "in" || value.intake === "out" ? value.intake : "off";
+  const claw: TelemetryFrame["claw"] = value.claw === "open" ? "open" : "closed";
+
+  return {
+    x: safeNumber(value.x),
+    y: safeNumber(value.y),
+    heading: safeNumber(value.heading),
+    leftPower: safeNumber(value.leftPower),
+    rightPower: safeNumber(value.rightPower),
+    leftEncoder: safeNumber(value.leftEncoder),
+    rightEncoder: safeNumber(value.rightEncoder),
+    shooterTarget: safeNumber(value.shooterTarget),
+    shooterRpm: safeNumber(value.shooterRpm),
+    feeder: Boolean(value.feeder),
+    armTarget: safeNumber(value.armTarget),
+    armPosition: safeNumber(value.armPosition),
+    intake,
+    claw,
+    artifactCount: safeCount(value.artifactCount),
+    time: Math.max(0, safeNumber(value.time)),
+    event: optionalText(value.event, 240),
+    warning: optionalText(value.warning, 240),
+    shot,
+    score: sanitizeScore(value.score),
+    scoreEvent,
+    decodeTelemetry: sanitizeDecodeTelemetry(value.decodeTelemetry),
+  };
+}
+
+function sanitizeRobotSetup(value: unknown): AnalyzeRobotSetup | null {
+  if (!isRecord(value) || !isRecord(value.startPose)) return null;
+  return {
+    robotId: safeText(value.robotId, "unknown", 80),
+    robotName: safeText(value.robotName, "Unknown robot", 120),
+    width: Math.max(0, safeNumber(value.width)),
+    length: Math.max(0, safeNumber(value.length)),
+    allianceColor: value.allianceColor === "red" ? "red" : "blue",
+    coordinateSystem: value.coordinateSystem === "center" ? "center" : "corner",
+    controlMode: value.controlMode === "teleop" ? "teleop" : "autonomous",
+    startPose: {
+      x: safeNumber(value.startPose.x),
+      y: safeNumber(value.startPose.y),
+      heading: safeNumber(value.startPose.heading),
+    },
+    preloadCount: Math.min(3, safeCount(value.preloadCount)),
+    selectedArtifactRows: Array.isArray(value.selectedArtifactRows)
+      ? value.selectedArtifactRows.filter((row): row is AnalyzeRobotSetup["selectedArtifactRows"][number] => artifactRows.includes(row as AnalyzeRobotSetup["selectedArtifactRows"][number]))
+      : [],
+  };
+}
+
+function sanitizeAnalyzeRequest(value: unknown): AnalyzeRequest | null {
+  if (!isRecord(value) || !Array.isArray(value.frames)) return null;
+  const robotSetup = sanitizeRobotSetup(value.robotSetup);
+  const frames = value.frames.map(sanitizeTelemetryFrame).filter((frame): frame is TelemetryFrame => frame !== null);
+  if (!robotSetup || frames.length === 0) return null;
+  const question = optionalText(value.question, 1_000);
+  const messages = Array.isArray(value.messages)
+    ? value.messages.slice(-MAX_CHAT_MESSAGES).flatMap((message): AIChatMessage[] => {
+      if (!isRecord(message) || (message.role !== "user" && message.role !== "assistant")) return [];
+      return [{
+        id: safeText(message.id, `message-${Date.now()}`, 120),
+        role: message.role,
+        content: safeText(message.content, "", 2_000),
+        createdAt: safeNumber(message.createdAt, Date.now()),
+      }];
+    })
+    : [];
+
+  return {
+    goal: safeText(value.goal, "Improve DECODE performance.", 800),
+    code: safeText(value.code, "", 12_000),
+    robotSetup,
+    frames: selectAnalysisFrames(frames),
+    messages,
+    question,
+  };
+}
 
 const decodeContext = {
-  appPurpose: "GCET is an FTC DECODE robot-code sandbox. Students test simplified autonomous and TeleOp routines before translating ideas into real FTC SDK code.",
+  appPurpose: "RoboLab is an FTC DECODE robot-code sandbox. Students test simplified autonomous and TeleOp routines before translating ideas into real FTC SDK code.",
   audience: "FTC students and mentors who want practical debugging, strategy, and programming feedback from a recorded simulation.",
   rulebookReference: "FTC DECODE Competition Manual TU32, summarized into app-specific guidance. Treat live telemetry and recorded score events as the source of truth for this run.",
   fieldLanguage: [
@@ -142,7 +314,6 @@ function requestedShotCount(goal: string) {
 function buildGoalFailures({
   requestedShots,
   wantsMovement,
-  wantsPreloadShot,
   moved,
   preloadAvailable,
   attemptedEnough,
@@ -152,7 +323,6 @@ function buildGoalFailures({
 }: {
   requestedShots: number;
   wantsMovement: boolean;
-  wantsPreloadShot: boolean;
   moved: boolean;
   preloadAvailable: boolean;
   attemptedEnough: boolean;
@@ -248,7 +418,6 @@ function evaluateGoal(goal: string, summary: TelemetrySummary): GoalEvaluation {
   const failures = buildGoalFailures({
     requestedShots,
     wantsMovement,
-    wantsPreloadShot,
     moved,
     preloadAvailable,
     attemptedEnough,
@@ -277,7 +446,9 @@ function evaluateGoal(goal: string, summary: TelemetrySummary): GoalEvaluation {
     wantsPreloadShot,
     achieved,
     summary: achieved
-      ? `Goal met: the run ${wantsMovement ? "moved, " : ""}fired ${summary.shotSuccessRate.attempted} artifact${summary.shotSuccessRate.attempted === 1 ? "" : "s"}, and scored ${summary.score.shotsMade}/${Math.max(1, requestedShots)} requested shot${Math.max(1, requestedShots) === 1 ? "" : "s"}.`
+      ? requestedShots > 0
+        ? `Goal met: the run ${wantsMovement ? "moved, " : ""}fired ${summary.shotSuccessRate.attempted} artifact${summary.shotSuccessRate.attempted === 1 ? "" : "s"}, and scored ${summary.score.shotsMade}/${requestedShots} requested shot${requestedShots === 1 ? "" : "s"}.`
+        : `Goal check complete: the run ${wantsMovement ? "moved, " : ""}fired ${summary.shotSuccessRate.attempted} artifact${summary.shotSuccessRate.attempted === 1 ? "" : "s"}, and the classifier recorded ${summary.score.shotsMade}/${summary.shotSuccessRate.attempted} made shot${summary.shotSuccessRate.attempted === 1 ? "" : "s"}.`
       : `Goal not met: ${failures[0]?.message || observations.filter((item) => item.includes("but") || item.includes("wrong-alliance")).join(" ") || "the recorded score did not match the intended objective."}`,
     observations,
     failures,
@@ -348,15 +519,18 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
   const violations = summary.ruleViolations;
   const hasViolation = violations.length > 0;
   const hasShotData = summary.shotSuccessRate.attempted > 0;
+  const hasMissedShot = hasShotData && summary.score.shotsMade < summary.shotSuccessRate.attempted;
   const rpmReady = summary.flywheelEfficiency.targetRpm === 0 || summary.flywheelEfficiency.percent >= 92;
   const goalEvaluation = evaluateGoal(goal, summary);
-  const status: AIFeedback["status"] = hasViolation || !goalEvaluation.achieved || (hasShotData && summary.shotSuccessRate.percent < 70) || !rpmReady ? "warning" : "complete";
+  const needsAttention = hasViolation || !goalEvaluation.achieved || hasMissedShot || !rpmReady;
+  const status: AIFeedback["status"] = needsAttention ? "warning" : "complete";
   const topViolation = violations[0];
   const primaryFailure = goalEvaluation.failures[0];
 
   const summaryMarkdown = [
     `**Intended goal:** ${goalEvaluation.intendedGoal}`,
     `**Goal check:** ${goalEvaluation.achieved ? "met" : "not met"}`,
+    `**Run status:** ${needsAttention ? "needs attention" : "ready as a repeatable baseline"}`,
     `**Score:** ${summary.score.totalPoints} pts, ${summary.score.shotsMade}/${summary.shotSuccessRate.attempted} shots made`,
     `**Classifier:** ${summary.score.classifiedShots} classified, ${summary.score.overflowShots} overflow, ${summary.score.wrongGoalShots} wrong-goal`,
     `**Artifacts:** ${summary.artifactCount.preloaded} preloaded, ${summary.artifactCount.collected} collected, ${summary.artifactCount.stored} stored, ${summary.artifactCount.fired} fired`,
@@ -365,25 +539,41 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
     `**Drive:** peak ${summary.robotVelocity.linearSpeedInchesPerSecond.toFixed(1)} in/s, variance ${summary.robotVelocity.speedVariance.toFixed(1)}`,
     `**Rule flags:** ${violations.length ? violations.map((violation) => violation.code).join(", ") : "none"}`,
   ].join("\n");
-  const nextTest = goalEvaluation.achieved
-    ? `Run the same routine 3-5 times from the same start pose and confirm it still scores ${Math.max(1, goalEvaluation.requestedShots)}/${Math.max(1, goalEvaluation.requestedShots)}.`
-    : primaryFailure?.nextTest || (hasShotData
-      ? "Replay the run and watch the shot at the classifier. Confirm whether it missed the square, crossed the wrong goal, or fired before alignment."
-      : "Run a short test that only spins the flywheel and shoots the preload, then add movement back after the shot is visible.");
+  const nextTest = hasMissedShot
+    ? primaryFailure?.nextTest || "Replay the run and watch the shot at the classifier. Confirm whether it missed the square, crossed the wrong goal, or fired before alignment."
+    : !rpmReady
+      ? "Run a short shooter-only test and confirm actual RPM reaches at least 92% of target before feeding the artifact."
+      : !goalEvaluation.achieved
+        ? primaryFailure?.nextTest || "Run a focused test for the first unmet part of the goal."
+        : goalEvaluation.requestedShots > 0
+          ? `Run the same routine 3-5 times from the same start pose and confirm it still scores ${goalEvaluation.requestedShots}/${goalEvaluation.requestedShots}.`
+          : "Repeat the same routine from the same start pose, or enter a more specific movement or scoring goal for a stricter check.";
 
   return {
-    headline: goalEvaluation.achieved
-      ? `Goal met: ${summary.score.shotsMade} scored shot${summary.score.shotsMade === 1 ? "" : "s"}`
-      : "Goal not met yet",
+    headline: hasViolation
+      ? "Run has rule warnings"
+      : hasMissedShot
+        ? `${summary.shotSuccessRate.attempted - summary.score.shotsMade} shot${summary.shotSuccessRate.attempted - summary.score.shotsMade === 1 ? "" : "s"} missed the classifier`
+        : !rpmReady
+          ? "Flywheel was not ready"
+          : goalEvaluation.achieved
+            ? goalEvaluation.requestedShots > 0
+              ? `Goal met: ${summary.score.shotsMade} scored shot${summary.score.shotsMade === 1 ? "" : "s"}`
+              : "Run analyzed"
+            : "Goal not met yet",
     status,
     happened: `${goalEvaluation.summary} Intended goal: "${goalEvaluation.intendedGoal}".`,
     cause: topViolation
       ? `${topViolation.code}: ${topViolation.message}`
-      : goalEvaluation.achieved
-        ? "The recorded classifier event confirms the shot entered the correct alliance classifier. The flywheel was at target speed when the shot fired."
+      : hasMissedShot
+        ? primaryFailure?.cause || "At least one fired artifact did not cross the correct alliance classifier."
         : !rpmReady
           ? "The shooter fed before the flywheel reached the target RPM tolerance needed for a reliable DECODE trajectory."
-          : primaryFailure?.cause || "The recorded classifier and shot events did not satisfy the intended goal.",
+          : goalEvaluation.achieved
+            ? summary.scoreEvents.length > 0
+              ? "The recorded classifier event confirms the shot entered the correct alliance classifier."
+              : "The recorded behavior satisfied the stated goal, which did not require a scoring result."
+            : primaryFailure?.cause || "The recorded classifier and shot events did not satisfy the intended goal.",
     evidence: [
       `Intended goal: ${goalEvaluation.intendedGoal}`,
       ...goalEvaluation.failures.map((failure) => failure.message),
@@ -397,14 +587,16 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
     ],
     fix: topViolation
       ? "Adjust the start pose, drive target, or artifact-control sequence so the robot footprint stays inside the field and controls no more than 3 artifacts."
-      : goalEvaluation.achieved
-        ? "No fix is required for this goal. Keep this run as a baseline, then repeat it several times to check consistency."
-        : primaryFailure?.action || (hasShotData && summary.shotSuccessRate.percent < 70
-          ? "Add a wait after spinFlywheel, keep shot angles between 32 and 58 degrees, and fire only when actual RPM is within 8% of target."
-          : "Make the smallest code change that directly targets the failed part of the goal: movement, shot timing, or classifier alignment."),
+      : hasMissedShot
+        ? primaryFailure?.action || "Tune the shooting pose, robot heading, shot angle, or flywheel timing before adding more path complexity."
+        : !rpmReady
+          ? "Add a wait after spinFlywheel and fire only when actual RPM is within 8% of target."
+          : goalEvaluation.achieved
+            ? "No fix is required for this goal. Keep this run as a baseline, then repeat it several times to check consistency."
+            : primaryFailure?.action || "Make the smallest code change that directly targets the failed part of the goal: movement, shot timing, or classifier alignment.",
     optimization: question
       ? `For the question "${question}", the highest leverage answer is to compare shot timing against RPM readiness before changing the path.`
-      : goalEvaluation.achieved
+      : !needsAttention && goalEvaluation.achieved
         ? "After this goal is repeatable, try shortening the drive path or adding a second artifact cycle."
         : primaryFailure?.optimization || "Once the failed part is fixed, optimize by reducing wait time or path distance without lowering shot reliability.",
     concept: "The AI checks the intended goal against recorded physics playback. A shoot command is only considered successful when a classifier score event appears.",
@@ -413,7 +605,7 @@ function buildMockFeedback(goal: string, frames: TelemetryFrame[], question?: st
   };
 }
 
-function structuredResponse(feedback: AIFeedback, mode: AnalyzeResponse["mode"], content: string): AnalyzeResponse {
+function structuredResponse(feedback: AIFeedback, mode: AnalyzeResponse["mode"], content: string, model?: string): AnalyzeResponse {
   const created = Math.floor(Date.now() / 1000);
   const assistantMessage: AIChatMessage = {
     id: `${mode}-${created}`,
@@ -430,7 +622,7 @@ function structuredResponse(feedback: AIFeedback, mode: AnalyzeResponse["mode"],
       id: `chatcmpl-${mode}-${created}`,
       object: "chat.completion",
       created,
-      model: mode === "mock" ? "mock-decode-telemetry-engine" : "gpt-4.1-mini",
+      model: mode === "mock" ? "mock-decode-telemetry-engine" : model || "unknown",
       choices: [{
         index: 0,
         message: { role: "assistant", content: JSON.stringify({ feedback, assistantMessage }) },
@@ -491,55 +683,75 @@ async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback) {
 
   const summary = summarizeFrames(payload.frames || []);
   const goalEvaluation = evaluateGoal(payload.goal || "Improve DECODE performance.", summary);
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: [
-            "You are the AI mentor inside GCET, an FTC DECODE simulator.",
-            "Use the provided app context, DECODE terminology, command model, and telemetry only.",
-            "First decide whether the user's intended goal was met, then explain that decision in plain language.",
-            "Return actionable coaching in markdown. Be specific, concise, and avoid generic encouragement.",
-            payload.question ? "For follow-up questions, answer the question directly in 2-4 short bullets and do not restate the full telemetry summary." : "",
-            "Never count a shot as scored unless summary.score or summary.scoreEvents says it scored.",
-          ].join(" "),
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            context: decodeContext,
-            goal: payload.goal,
-            intendedGoal: payload.goal,
-            goalEvaluation,
-            question: payload.question,
-            summary,
-            instruction: "Treat summary.score and summary.scoreEvents as authoritative because they come from the recorded physics playback and classifier crossing detector.",
-            recentMessages: (payload.messages || []).slice(-8),
-          }),
-        },
-      ],
-      temperature: 0.2,
-    }),
-  });
+  const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
-  if (!response.ok) return null;
-  const json = await response.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) return null;
-  return structuredResponse(payload.question ? feedback : { ...feedback, summaryMarkdown: content }, "openai", content);
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are the AI mentor inside RoboLab, an FTC DECODE simulator.",
+              "Use the provided app context, robot code, setup, DECODE terminology, command model, and telemetry only.",
+              "First decide whether the user's intended goal was met, then explain that decision in plain language.",
+              "Return actionable coaching in markdown. Be specific, concise, and avoid generic encouragement.",
+              payload.question ? "For follow-up questions, answer the question directly in 2-4 short bullets and do not restate the full telemetry summary." : "",
+              "Never count a shot as scored unless summary.score or summary.scoreEvents says it scored.",
+            ].join(" "),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              context: decodeContext,
+              goal: payload.goal,
+              intendedGoal: payload.goal,
+              code: payload.code,
+              robotSetup: payload.robotSetup,
+              goalEvaluation,
+              question: payload.question,
+              summary,
+              instruction: "Treat summary.score and summary.scoreEvents as authoritative because they come from the recorded physics playback and classifier crossing detector.",
+              recentMessages: (payload.messages || []).slice(-MAX_CHAT_MESSAGES),
+            }),
+          },
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    if (!response.ok) return null;
+    const json: unknown = await response.json();
+    if (!isRecord(json) || !Array.isArray(json.choices) || !isRecord(json.choices[0]) || !isRecord(json.choices[0].message)) return null;
+    const content = json.choices[0].message.content;
+    if (typeof content !== "string" || !content.trim()) return null;
+    return structuredResponse(payload.question ? feedback : { ...feedback, summaryMarkdown: content }, "openai", content, model);
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const payload = await request.json() as AnalyzeRequest;
-  const frames = Array.isArray(payload.frames) ? payload.frames : [];
-  const goal = payload.goal || "Improve DECODE performance.";
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > MAX_REQUEST_BYTES) {
+    return NextResponse.json({ error: "Analysis payload is too large." }, { status: 413 });
+  }
+
+  const body: unknown = await request.json().catch(() => null);
+  const payload = sanitizeAnalyzeRequest(body);
+  if (!payload) {
+    return NextResponse.json({ error: "Request must include valid goal, code, robot setup, and telemetry frames." }, { status: 400 });
+  }
+
+  const frames = payload.frames;
+  const goal = payload.goal;
   const feedback = buildMockFeedback(goal, frames, payload.question);
   const summary = summarizeFrames(frames);
   const goalEvaluation = evaluateGoal(goal, summary);
@@ -547,9 +759,8 @@ export async function POST(request: NextRequest) {
     ? buildFollowUpContent(payload.question, goal, summary, goalEvaluation)
     : `${feedback.happened}\n\n${feedback.summaryMarkdown}`;
 
-  const openaiResponse = await runOpenAI({ ...payload, frames }, feedback);
+  const openaiResponse = await runOpenAI(payload, feedback);
   if (openaiResponse) return NextResponse.json(openaiResponse);
 
-  await delay(600);
   return NextResponse.json(structuredResponse(feedback, "mock", mockContent));
 }

@@ -270,7 +270,8 @@ export function InputPanel({
   ) : null;
 
   useEffect(() => {
-    setMounted(true);
+    const mountTimer = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(mountTimer);
   }, []);
 
   return (

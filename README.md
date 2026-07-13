@@ -2,7 +2,7 @@
 
 > AI-powered virtual simulation and debugging feedback for FIRST Tech Challenge programmers.
 
-RoboLab FTC is a GCET project that combines virtual robot simulation, telemetry, and AI-guided explanation in one learning environment. The platform is designed to help FTC programmers understand not only **what** their robot did, but **why** it behaved that way and **how** to improve the code.
+RoboLab FTC combines virtual robot simulation, telemetry, and AI-guided explanation in one learning environment. The platform is designed to help FTC programmers understand not only **what** their robot did, but **why** it behaved that way and **how** to improve the code.
 
 ## Table of Contents
 
@@ -190,25 +190,25 @@ Potential future development includes:
 
 ## Current Repository Status
 
-This repository currently contains an early web prototype of the planned experience. It demonstrates the interface and end-to-end workflow but is not the completed product described above.
+This repository contains a working simulator-first prototype of the planned experience. It demonstrates the core end-to-end workflow but is not the completed product described above.
 
 The current implementation includes:
 
 - A Next.js landing page and simulator dashboard
-- A simplified current-season field representation, currently based on DECODE
-- Preset robot configurations and adjustable dimensions
-- Five deterministic demonstration scenarios
-- Generated telemetry and timeline playback
-- Scenario-based mock mentor feedback
-- A mock `/api/analyze` route
+- An interactive 3D DECODE field with Rapier artifact and shot physics
+- One preset turret-shooter robot, configurable start pose, alliance, preload, and artifact rows
+- A small RoboLab autonomous command DSL plus keyboard TeleOp controls
+- Telemetry recording, timeline playback, rule warnings, and classifier scoring
+- Deterministic mentor feedback with optional OpenAI-generated analysis and follow-up chat
+- A validated and bounded `/api/analyze` route that receives code, robot setup, and compact telemetry
 
 Current limitations:
 
-- The mentor feedback is predefined mock data and does not call an AI model.
-- The code editor does not compile or execute FTC SDK Java.
-- Simulation behavior is deterministic and does not use a full physics engine.
-- Only preset demonstrations are supported.
-- CAD import and custom robot construction are placeholders.
+- The code editor executes a limited command DSL, not FTC SDK Java.
+- Physics and DECODE rules are partial rather than competition-accurate.
+- Only one robot preset and one season are active.
+- CAD import, custom robot construction, accounts, persistence, and team workflows are placeholders.
+- There is no automated test suite or CI configuration yet.
 
 These constraints reflect the current implementation stage, not the intended final scope of RoboLab FTC.
 
@@ -233,8 +233,8 @@ The simulation and AI architecture are expected to evolve as the project moves b
 ### Install and run
 
 ```bash
-git clone https://github.com/BeitM/GCET.git
-cd GCET/my-app/frontend
+git clone https://github.com/BeitM/robolab.git
+cd robolab/my-app/frontend
 corepack enable
 pnpm install
 pnpm dev
@@ -252,6 +252,7 @@ Run commands from `my-app/frontend`:
 | `pnpm build` | Create and type-check a production build |
 | `pnpm start` | Run the production build |
 | `pnpm lint` | Run ESLint |
+| `pnpm typecheck` | Run TypeScript without emitting files |
 
 ## Team
 

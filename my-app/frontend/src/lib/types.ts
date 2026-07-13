@@ -73,8 +73,23 @@ export type AIChatMessage = {
   createdAt:number;
 };
 
+export type AnalyzeRobotSetup = {
+  robotId:string;
+  robotName:string;
+  width:number;
+  length:number;
+  allianceColor:AllianceColor;
+  coordinateSystem:CoordinateSystem;
+  controlMode:ControlMode;
+  startPose:{ x:number; y:number; heading:number };
+  preloadCount:number;
+  selectedArtifactRows:ArtifactRowId[];
+};
+
 export type AnalyzeRequest = {
   goal:string;
+  code:string;
+  robotSetup:AnalyzeRobotSetup;
   frames:TelemetryFrame[];
   messages?:AIChatMessage[];
   question?:string;
