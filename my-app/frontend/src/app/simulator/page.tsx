@@ -35,6 +35,11 @@ const defaultGoal = "Test robot code on the DECODE field.";
 const defaultCode = `driveToPosition(72, 90, 145);
 spinFlywheel(2400);
 shoot(60);`;
+const learningPathGoal = "Drive forward, move left, spin up the shooter, and launch one artifact.";
+const learningPathCode = `driveForward(24);
+driveLeft(12);
+spinFlywheel(3600);
+shoot();`;
 const defaultTeleopCode = `// TeleOp controls
 // W/S: drive forward and backward
 // A/D: strafe left and right
@@ -42,6 +47,7 @@ const defaultTeleopCode = `// TeleOp controls
 // Z: hold to run intake in
 // Space: fire one loaded artifact`;
 const defaultStartPose: StartPose = { x: 72, y: 72, heading: 90 };
+const learningPathStartPose: StartPose = { x: 20, y: 122, heading: 0 };
 const defaultPreloadCount = 1;
 const defaultArtifactRows: ArtifactRowId[] = ["topLoading", "topRight", "topCenter", "topLeft", "bottomLoading", "bottomRight", "bottomCenter", "bottomLeft"];
 const SIMULATION_FPS = 60;
@@ -1056,6 +1062,7 @@ function ScorePanel({ frame }: { frame: TelemetryFrame }) {
 }
 
 export default function SimulatorDashboard() {
+  const [experienceLevel, setExperienceLevel] = useState<"beginner" | "intermediate" | "advanced">("advanced");
   const [goal, setGoal] = useState(defaultGoal);
   const [controlMode, setControlModeState] = useState<ControlMode>("autonomous");
   const [autonomousCode, setAutonomousCode] = useState(defaultCode);
@@ -1126,6 +1133,32 @@ export default function SimulatorDashboard() {
 
   useEffect(() => () => {
     if (timer.current) clearInterval(timer.current);
+  }, []);
+
+  useEffect(() => {
+    const requestedLevel = new URLSearchParams(window.location.search).get("level");
+    if (requestedLevel !== "beginner" && requestedLevel !== "intermediate" && requestedLevel !== "advanced") return;
+    const updateLevel = window.setTimeout(() => {
+      setExperienceLevel(requestedLevel);
+      if (requestedLevel === "advanced") return;
+
+      setGoal(learningPathGoal);
+      setAutonomousCode(learningPathCode);
+      setStartX(learningPathStartPose.x);
+      setStartY(learningPathStartPose.y);
+      setStartHeading(learningPathStartPose.heading);
+      setFrames(generateRobotCodeFrames(
+        learningPathCode,
+        learningPathStartPose,
+        "corner",
+        defaultPreloadCount,
+        17,
+        17,
+        defaultArtifactRows,
+      ));
+      setIndex(0);
+    }, 0);
+    return () => window.clearTimeout(updateLevel);
   }, []);
 
   const selectRobot = (id: RobotPresetId) => {
@@ -1727,8 +1760,14 @@ export default function SimulatorDashboard() {
         <div className="sim-title"><span>SIMULATION</span><i />{robotPresets.find((robot) => robot.id === robotId)?.name}</div>
         <div className="sim-nav-right"><span><i className="live-dot" />SIMULATION READY</span><Link href="/">Exit lab x</Link></div>
       </header>
+      <section className={`lab-guide ${experienceLevel}`}>
+        <div><span>{experienceLevel === "beginner" ? "BEGINNER · FIRST MISSION" : `${experienceLevel.toUpperCase()} LAB`}</span><strong>{experienceLevel === "beginner" ? "Make the robot drive, turn, and shoot." : experienceLevel === "intermediate" ? "Edit commands and connect movement to telemetry." : "Configure, test, and optimize the full system."}</strong></div>
+        <ol><li><b>1</b> Read the goal</li><li><b>2</b> Press Run</li><li><b>3</b> Ask the AI coach</li></ol>
+        <Link href="/#paths">Change level</Link>
+      </section>
       <div className="sim-layout">
         <InputPanel
+          experienceLevel={experienceLevel}
           {...{
             controlMode,
             setControlMode: updateControlMode,
@@ -1758,6 +1797,7 @@ export default function SimulatorDashboard() {
           onRun={run}
           onStop={stopSimulation}
           onAnalyze={() => void requestAnalysis()}
+          analyzing={analysisPending}
           canAnalyze={hasRun}
         />
         <div className="workspace">
