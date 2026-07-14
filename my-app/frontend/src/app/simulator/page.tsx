@@ -1062,6 +1062,7 @@ function ScorePanel({ frame }: { frame: TelemetryFrame }) {
 }
 
 export default function SimulatorDashboard() {
+  const [learningMode, setLearningMode] = useState(false);
   const [experienceLevel, setExperienceLevel] = useState<"beginner" | "intermediate" | "advanced">("advanced");
   const [goal, setGoal] = useState(defaultGoal);
   const [controlMode, setControlModeState] = useState<ControlMode>("autonomous");
@@ -1136,11 +1137,19 @@ export default function SimulatorDashboard() {
   }, []);
 
   useEffect(() => {
-    const requestedLevel = new URLSearchParams(window.location.search).get("level");
-    if (requestedLevel !== "beginner" && requestedLevel !== "intermediate" && requestedLevel !== "advanced") return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedMode = searchParams.get("mode");
+    const requestedLevel = searchParams.get("level");
+    const validLevel = requestedLevel === "beginner" || requestedLevel === "intermediate" || requestedLevel === "advanced"
+      ? requestedLevel
+      : "beginner";
+    const requestedLearningMode = requestedMode === "learning" || (requestedMode !== "sandbox" && requestedLevel !== null);
+    if (!requestedLearningMode) return;
+
     const updateLevel = window.setTimeout(() => {
-      setExperienceLevel(requestedLevel);
-      if (requestedLevel === "advanced") return;
+      setLearningMode(true);
+      setExperienceLevel(validLevel);
+      if (validLevel === "advanced") return;
 
       setGoal(learningPathGoal);
       setAutonomousCode(learningPathCode);
@@ -1760,13 +1769,14 @@ export default function SimulatorDashboard() {
         <div className="sim-title"><span>SIMULATION</span><i />{robotPresets.find((robot) => robot.id === robotId)?.name}</div>
         <div className="sim-nav-right"><span><i className="live-dot" />SIMULATION READY</span><Link href="/">Exit lab x</Link></div>
       </header>
-      <section className={`lab-guide ${experienceLevel}`}>
-        <div><span>{experienceLevel === "beginner" ? "BEGINNER · FIRST MISSION" : `${experienceLevel.toUpperCase()} LAB`}</span><strong>{experienceLevel === "beginner" ? "Make the robot drive, turn, and shoot." : experienceLevel === "intermediate" ? "Edit commands and connect movement to telemetry." : "Configure, test, and optimize the full system."}</strong></div>
-        <ol><li><b>1</b> Read the goal</li><li><b>2</b> Press Run</li><li><b>3</b> Ask the AI coach</li></ol>
-        <Link href="/#paths">Change level</Link>
-      </section>
+      {learningMode && <section className={`lab-guide ${experienceLevel}`}>
+        <div><span>{experienceLevel === "beginner" ? "LEVEL 1 · GUIDED LAB" : `${experienceLevel.toUpperCase()} · GUIDED LAB`}</span><strong>{experienceLevel === "beginner" ? "Start with a focused mission and a simplified workspace." : experienceLevel === "intermediate" ? "Practice with more configuration and room to experiment." : "Use the complete lab inside a structured challenge."}</strong></div>
+        <ol><li><b>1</b> Read the goal</li><li><b>2</b> Run the robot</li><li><b>3</b> Review feedback</li></ol>
+        <Link href="/learn">Change level</Link>
+      </section>}
       <div className="sim-layout">
         <InputPanel
+          learningMode={learningMode}
           experienceLevel={experienceLevel}
           {...{
             controlMode,

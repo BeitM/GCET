@@ -194,7 +194,8 @@ This repository contains a working simulator-first prototype of the planned expe
 
 The current implementation includes:
 
-- A Next.js landing page and simulator dashboard
+- A Next.js landing page with separate Sandbox and structured Learning Mode entry paths
+- A shared simulator dashboard that exposes the full setup in Sandbox and level-based guidance in Learning Mode
 - An interactive 3D DECODE field with Rapier artifact and shot physics
 - One preset turret-shooter robot, configurable start pose, alliance, preload, and artifact rows
 - A small RoboLab autonomous command DSL plus keyboard TeleOp controls
@@ -240,7 +241,7 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) for the landing page or [http://localhost:3000/simulator](http://localhost:3000/simulator) for the simulator.
+Open [http://localhost:3000](http://localhost:3000) to choose a mode. The open Sandbox is available at [http://localhost:3000/simulator?mode=sandbox](http://localhost:3000/simulator?mode=sandbox), and the structured level hub is at [http://localhost:3000/learn](http://localhost:3000/learn).
 
 ### Scripts
 

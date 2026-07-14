@@ -22,6 +22,7 @@ AGENTS.md                              Future Codex working guide
 my-app/frontend/
   package.json                         pnpm scripts and dependencies
   src/app/page.tsx                     Landing page (`/`)
+  src/app/learn/page.tsx               Structured Learning Mode level hub
   src/app/simulator/page.tsx           Simulator orchestration and engine
   src/app/api/analyze/route.ts         Validation, coaching, optional OpenAI call
   src/components/InputPanel.tsx        Goal/code/robot/field setup
@@ -39,14 +40,15 @@ my-app/frontend/
 
 ## Current user flow
 
-1. The landing page links to `/simulator`.
-2. The user chooses Autonomous or TeleOp, enters a goal, edits code, and configures alliance, coordinates, start pose, preload, and artifact rows.
-3. Autonomous parses a limited command DSL: drive/strafe, `driveToPosition`, turn, flywheel, shoot, intake, and wait. Unsupported syntax is ignored; this is not Java execution.
-4. TeleOp uses W/A/S/D, arrow keys, Z for intake, and Space to shoot.
-5. A browser timeline drives the Three/Rapier scene. Recorded classifier crossings produce 3-point classified shots up to a capacity of 9, then 1-point overflow shots.
-6. Users can orbit/zoom, scrub completed playback, inspect telemetry, and analyze the run. Autonomous analyzes automatically; TeleOp analyzes after stop.
-7. Analysis receives bounded code, robot setup, compact telemetry, and recent chat. It always creates deterministic feedback and optionally calls OpenAI when a non-mock server key is configured.
-8. `/login`, `/student`, and `/coach` remain disconnected mock/static surfaces.
+1. The landing page offers two first-class paths: an unrestricted Sandbox and a structured Learning Mode.
+2. Sandbox opens the full simulator configuration. Learning Mode starts at `/learn`, then opens the shared simulator with level guidance and progressively exposed setup controls.
+3. The user chooses Autonomous or TeleOp, enters a goal, edits code, and configures the controls available in the selected mode.
+4. Autonomous parses a limited command DSL: drive/strafe, `driveToPosition`, turn, flywheel, shoot, intake, and wait. Unsupported syntax is ignored; this is not Java execution.
+5. TeleOp uses W/A/S/D, arrow keys, Z for intake, and Space to shoot.
+6. A browser timeline drives the Three/Rapier scene. Recorded classifier crossings produce 3-point classified shots up to a capacity of 9, then 1-point overflow shots.
+7. Users can orbit/zoom, scrub completed playback, inspect telemetry, and analyze the run. Autonomous analyzes automatically; TeleOp analyzes after stop.
+8. Analysis receives bounded code, robot setup, compact telemetry, and recent chat. It always creates deterministic feedback and optionally calls OpenAI when a non-mock server key is configured.
+9. `/login`, `/student`, and `/coach` remain disconnected mock/static surfaces.
 
 ## What works
 
