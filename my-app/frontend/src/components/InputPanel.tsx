@@ -14,6 +14,7 @@ const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
 ];
 
 type InputPanelProps = {
+  experienceLevel: "beginner" | "intermediate" | "advanced";
   goal: string;
   setGoal: (value: string) => void;
   code: string;
@@ -59,6 +60,8 @@ function NumberDraftInput({
   const [draft, setDraft] = useState(String(Number(value.toFixed(1))));
 
   useEffect(() => {
+    // Keep the editable draft aligned when another control changes the pose.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(String(Number(value.toFixed(1))));
   }, [value]);
 
@@ -104,6 +107,7 @@ function NumberDraftInput({
 }
 
 export function InputPanel({
+  experienceLevel,
   goal,
   setGoal,
   code,
@@ -140,10 +144,12 @@ export function InputPanel({
     <aside className="input-panel panel">
       <div className="panel-head input-panel-head">
         <div>
-          <h2>Simulation setup</h2>
-          <p>Configure the robot code and virtual robot.</p>
+          <h2>{experienceLevel === "beginner" ? "Your first mission" : "Simulation setup"}</h2>
+          <p>{experienceLevel === "beginner" ? "The robot is ready. Read the goal, then press Run." : "Configure the robot code and virtual robot."}</p>
         </div>
       </div>
+
+      {experienceLevel === "beginner" && <div className="beginner-tip"><b>NEW HERE?</b><span>Code is just a list of instructions. The robot reads them from top to bottom.</span></div>}
 
       <section className="setup-section goal-section">
         <label className="form-label" htmlFor="goal">Robot goal</label>
@@ -158,7 +164,7 @@ export function InputPanel({
         <textarea id="code" spellCheck={false} className="code-input" value={code} onChange={(event) => setCode(event.target.value)} />
       </section>
 
-      <section className="setup-section robot-configurator">
+      {experienceLevel !== "beginner" && <section className="setup-section robot-configurator">
         <div className="config-title">
           <div>
             <label className="form-label">Robot preset</label>
@@ -178,9 +184,9 @@ export function InputPanel({
           <span>{selectedRobot?.description}</span>
         </div>
         <button type="button" className="cad-button" disabled><span>+</span> Import CAD <small>Coming later</small></button>
-      </section>
+      </section>}
 
-      <section className="setup-section field-configurator">
+      {experienceLevel === "advanced" && <section className="setup-section field-configurator">
         <div className="config-title">
           <div>
             <label className="form-label">Field configuration</label>
@@ -249,12 +255,12 @@ export function InputPanel({
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       <div className="input-actions">
         <button className="button run-button" onClick={onRun} disabled={running}>
           <span>{running ? "■" : "▶"}</span>
-          {running ? "Simulation running..." : "Run simulation"}
+          {running ? "Robot is moving..." : experienceLevel === "beginner" ? "Run my first mission" : "Run simulation"}
         </button>
         {running && (
           <button className="button analyze-button" type="button" onClick={onStop}>
@@ -264,7 +270,7 @@ export function InputPanel({
         )}
         <button className="button analyze-button" disabled={!canAnalyze || running || analyzing} onClick={onAnalyze}>
           <span>*</span>
-          {analyzing ? "Analyzing run..." : "Get AI feedback"}
+          {analyzing ? "Analyzing run..." : experienceLevel === "beginner" ? "Ask the coach what happened" : "Get AI feedback"}
         </button>
         {setupWarning && <p className="action-warning">{setupWarning}</p>}
         {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock AI feedback.</p>}

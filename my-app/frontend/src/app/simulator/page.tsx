@@ -20,7 +20,7 @@ type RobotCommand =
   | { type: "intake"; mode: "in" | "out" | "off" }
   | { type: "wait"; seconds: number };
 
-const defaultGoal = "Test robot code on the DECODE field.";
+const defaultGoal = "Drive forward, move left, spin up the shooter, and launch one artifact.";
 const defaultCode = `driveForward(24);
 driveLeft(12);
 spinFlywheel(3600);
@@ -557,6 +557,7 @@ const isAIFeedback = (value: unknown): value is AIFeedback => {
 };
 
 export default function SimulatorDashboard() {
+  const [experienceLevel, setExperienceLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [goal, setGoal] = useState(defaultGoal);
   const [code, setCode] = useState(defaultCode);
   const [robotId, setRobotId] = useState<RobotPresetId>("turret");
@@ -588,6 +589,13 @@ export default function SimulatorDashboard() {
 
   useEffect(() => () => {
     if (timer.current) clearInterval(timer.current);
+  }, []);
+
+  useEffect(() => {
+    const requestedLevel = new URLSearchParams(window.location.search).get("level");
+    if (requestedLevel !== "intermediate" && requestedLevel !== "advanced") return;
+    const updateLevel = window.setTimeout(() => setExperienceLevel(requestedLevel), 0);
+    return () => window.clearTimeout(updateLevel);
   }, []);
 
   const selectRobot = (id: RobotPresetId) => {
@@ -843,8 +851,14 @@ export default function SimulatorDashboard() {
         <div className="sim-title"><span>SIMULATION</span><i />{robotPresets.find((robot) => robot.id === robotId)?.name}</div>
         <div className="sim-nav-right"><span><i className="live-dot" />SIMULATION READY</span><Link href="/">Exit lab x</Link></div>
       </header>
+      <section className={`lab-guide ${experienceLevel}`}>
+        <div><span>{experienceLevel === "beginner" ? "BEGINNER · FIRST MISSION" : `${experienceLevel.toUpperCase()} LAB`}</span><strong>{experienceLevel === "beginner" ? "Make the robot drive, turn, and shoot." : experienceLevel === "intermediate" ? "Edit commands and connect movement to telemetry." : "Configure, test, and optimize the full system."}</strong></div>
+        <ol><li><b>1</b> Read the goal</li><li><b>2</b> Press Run</li><li><b>3</b> Ask the AI coach</li></ol>
+        <Link href="/#paths">Change level</Link>
+      </section>
       <div className="sim-layout">
         <InputPanel
+          experienceLevel={experienceLevel}
           {...{
             goal,
             setGoal,
