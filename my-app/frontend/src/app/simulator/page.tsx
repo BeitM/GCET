@@ -1,13 +1,8 @@
 "use client";
 
 import Link from "next/link";
-<<<<<<< HEAD
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AIFeedback, AIChatMessage, AllianceColor, AnalyzeResponse, ArtifactPhysicsState, ArtifactRowId, ControlMode, CoordinateSystem, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
-=======
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AIFeedback, ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
->>>>>>> drivermode
 import { AIFeedbackPanel } from "@/components/AIFeedbackPanel";
 import { FieldSimulator } from "@/components/FieldSimulator";
 import { GamepadProgramPanel } from "@/components/GamepadProgramPanel";
@@ -15,10 +10,8 @@ import { InputPanel } from "@/components/InputPanel";
 import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { VirtualGamepad } from "@/components/VirtualGamepad";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
-<<<<<<< HEAD
 import { selectAnalysisFrames } from "@/lib/analysis";
 import { clampMotorPower, driveAxesFromMotorPowers, mecanumMotorPowers, setMotorPower, sidePowersFromMotors, stoppedMotorPowers, type MotorId, type RobotMotorPowers } from "@/lib/motors";
-=======
 import {
   createVirtualGamepadSnapshot,
   DriverAssignments,
@@ -35,7 +28,6 @@ import {
   VIRTUAL_GAMEPAD_INDEX,
   VirtualGamepadPair,
 } from "@/lib/teleop";
->>>>>>> drivermode
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -70,21 +62,9 @@ const learningPathGoal = "Drive forward, move left, spin up the shooter, and lau
 const learningPathCode = `driveForward(24);
 driveLeft(12);
 spinFlywheel(3600);
-<<<<<<< HEAD
 shoot();`;
-const defaultTeleopCode = `// TeleOp controls
-// W/S: drive forward and backward
-// A/D: strafe left and right
-// Arrow Left/Right: turn heading
-// Z: hold to run intake in
-// Space: fire one loaded artifact`;
-const defaultStartPose: StartPose = { x: 72, y: 72, heading: 90 };
-const learningPathStartPose: StartPose = { x: 20, y: 122, heading: 0 };
-const defaultPreloadCount = 1;
-=======
-shoot();
-
-// Teleop bindings
+const defaultTeleopCode = `// TeleOp gamepad bindings
+// Driver A: drivetrain
 if (gamepad1.left_stick_y > 0.15) driveForward(1);
 if (gamepad1.left_stick_y < -0.15) driveBackward(1);
 if (gamepad1.left_stick_x > 0.15) driveRight(1);
@@ -92,11 +72,18 @@ if (gamepad1.left_stick_x < -0.15) driveLeft(1);
 if (gamepad1.right_stick_x > 0.15) turnRight(1);
 if (gamepad1.right_stick_x < -0.15) turnLeft(1);
 if (gamepad1.right_trigger > 0.2) spinFlywheel(3600);
-if (gamepad1.a) shoot();
+if (gamepad1.a) shoot(60);
 if (gamepad1.left_bumper) intakeSpinIn();
-if (gamepad1.b) intakeSpinOut();`;
-const defaultStartPose: StartPose = { x: 20, y: 122, heading: 0 };
->>>>>>> drivermode
+if (gamepad1.b) intakeSpinOut();
+
+// Driver B: mechanisms (available in two-driver mode)
+if (gamepad2.right_trigger > 0.2) spinFlywheel(3600);
+if (gamepad2.a) shoot(60);
+if (gamepad2.left_bumper) intakeSpinIn();
+if (gamepad2.b) intakeSpinOut();`;
+const defaultStartPose: StartPose = { x: 72, y: 72, heading: 90 };
+const learningPathStartPose: StartPose = { x: 20, y: 122, heading: 0 };
+const defaultPreloadCount = 1;
 const defaultArtifactRows: ArtifactRowId[] = ["topLoading", "topRight", "topCenter", "topLeft", "bottomLoading", "bottomRight", "bottomCenter", "bottomLeft"];
 const SIMULATION_FPS = 60;
 const SIMULATION_FRAME_SECONDS = 1 / SIMULATION_FPS;
@@ -112,7 +99,6 @@ const ARTIFACT_RADIUS_INCHES = 2.5;
 const ARTIFACT_WALL_CLEARANCE_INCHES = 3.25;
 const ARTIFACT_RESTITUTION = 0.32;
 const ARTIFACT_FRICTION_PER_SECOND = 4.2;
-<<<<<<< HEAD
 const ARTIFACT_MAX_SPEED_INCHES_PER_SECOND = 96;
 const ROBOT_PUSH_MAX_SPEED_INCHES_PER_SECOND = 72;
 const AUTO_DRIVE_SPEED_INCHES_PER_SECOND = 36;
@@ -130,12 +116,10 @@ const DECODE_ARTIFACT_SCORE_POINTS = 10;
 const DECODE_SHOT_MIN_SPEED = 6.2;
 const DECODE_SHOT_MIN_ANGLE = 32;
 const DECODE_SHOT_MAX_ANGLE = 58;
-=======
 const TELEOP_MAX_SPEED_INCHES_PER_SECOND = 30;
 const TELEOP_TURN_SPEED_DEGREES_PER_SECOND = 150;
 const TELEOP_PICKUP_RADIUS_INCHES = 10;
 const TELEOP_PICKUP_COOLDOWN_SECONDS = 0.24;
->>>>>>> drivermode
 const artifactSpecs: ArtifactSpec[] = [
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
   { id: "top-loading-green", row: "topLoading", x: 133.75, y: 138, color: "green" },
@@ -632,7 +616,6 @@ function parseRobotCode(source: string): RobotCommand[] {
     .filter(Boolean) as RobotCommand[];
 }
 
-<<<<<<< HEAD
 function isDecodeShotSuccessful(speed: number, angle: number, targetRpm: number, actualRpm: number) {
   return speed >= DECODE_SHOT_MIN_SPEED
     && angle >= DECODE_SHOT_MIN_ANGLE
@@ -747,8 +730,10 @@ function createSetupFrame(
       ruleViolations,
     }),
     ...status,
-=======
-type TeleopRuntime = {
+  };
+}
+
+type DriverTeleopRuntime = {
   previousActive: Record<string, boolean>;
   shotId: number;
   collectCooldown: number;
@@ -783,13 +768,14 @@ function stepTeleopFrame(
   artifacts: SimArtifact[],
   robotWidth: number,
   robotLength: number,
-  runtime: TeleopRuntime,
+  runtime: DriverTeleopRuntime,
   dt: number,
 ): TelemetryFrame {
   let forwardPower = 0;
   let lateralPower = 0;
   let turnPower = 0;
   let intake: TelemetryFrame["intake"] = "off";
+  let intakeMotorPower = 0;
   let intakeIsActive = false;
   let shooterTarget = 0;
   let shot: TelemetryFrame["shot"];
@@ -822,6 +808,7 @@ function stepTeleopFrame(
     }
     if (binding.action.type === "intake") {
       intake = binding.action.mode;
+      intakeMotorPower = binding.action.mode === "in" ? 1 : binding.action.mode === "out" ? -1 : 0;
       intakeIsActive = binding.action.mode === "in";
       return;
     }
@@ -839,6 +826,14 @@ function stepTeleopFrame(
   const safeForward = clamp(forwardPower, -1, 1);
   const safeLateral = clamp(lateralPower, -1, 1);
   const safeTurn = clamp(turnPower, -1, 1);
+  const motorPowers: RobotMotorPowers = {
+    ...mecanumMotorPowers(safeForward, safeLateral, safeTurn),
+    intake: intakeMotorPower,
+    flywheelLeft: shooterTarget / FLYWHEEL_MAX_RPM,
+    flywheelRight: -shooterTarget / FLYWHEEL_MAX_RPM,
+    turret: 0,
+  };
+  const sidePowers = sidePowersFromMotors(motorPowers);
   const heading = normalizeHeading(previous.heading + safeTurn * TELEOP_TURN_SPEED_DEGREES_PER_SECOND * dt);
   const headingRadians = heading * THREE_DEGREES_TO_RADIANS;
   const forward = { x: Math.cos(headingRadians), y: -Math.sin(headingRadians) };
@@ -865,8 +860,9 @@ function stepTeleopFrame(
     ...previous,
     ...nextPose,
     time: nextTime,
-    leftPower: clamp(safeForward - safeTurn, -1, 1),
-    rightPower: clamp(safeForward + safeTurn, -1, 1),
+    leftPower: sidePowers.leftPower,
+    rightPower: sidePowers.rightPower,
+    motorPowers,
     shooterTarget,
     shooterRpm,
     feeder: Boolean(shot),
@@ -875,7 +871,6 @@ function stepTeleopFrame(
     shot,
     artifacts: cloneArtifactFrameState(artifacts),
     event,
->>>>>>> drivermode
   };
 }
 
@@ -977,7 +972,6 @@ function generateRobotCodeFrames(
 
   const collectIntakeContact = () => {
     if (intake !== "in") return "";
-<<<<<<< HEAD
     const headingRadians = current.heading * THREE_DEGREES_TO_RADIANS;
     const forward = { x: Math.cos(headingRadians), y: -Math.sin(headingRadians) };
     const right = { x: Math.sin(headingRadians), y: Math.cos(headingRadians) };
@@ -994,8 +988,6 @@ function generateRobotCodeFrames(
     if (contactIndex < 0) return "";
 
     const artifact = artifacts[contactIndex];
-=======
->>>>>>> drivermode
     if (artifactCount < 3) {
       artifactCount += 1;
       collectedArtifacts += 1;
@@ -1360,7 +1352,6 @@ function generateRobotCodeFrames(
 
 const THREE_DEGREES_TO_RADIANS = Math.PI / 180;
 
-<<<<<<< HEAD
 const analysisUnavailableFeedback: AIFeedback = {
   headline: "AI analysis unavailable",
   status: "warning",
@@ -1370,22 +1361,6 @@ const analysisUnavailableFeedback: AIFeedback = {
   fix: "Try running analysis again after the dev server finishes compiling. If it keeps failing, check the browser console and API route logs.",
   optimization: "The simulator data is still available in the scoring and telemetry panels.",
   concept: "Simulation playback and AI analysis are separate layers, so a temporary AI failure should not invalidate the recorded run.",
-=======
-const isAIFeedback = (value: unknown): value is AIFeedback => {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<AIFeedback>;
-  return Boolean(
-    typeof candidate.headline === "string"
-    && (candidate.status === "warning" || candidate.status === "complete")
-    && typeof candidate.happened === "string"
-    && typeof candidate.cause === "string"
-    && Array.isArray(candidate.evidence)
-    && candidate.evidence.every((item) => typeof item === "string")
-    && typeof candidate.fix === "string"
-    && typeof candidate.optimization === "string"
-    && typeof candidate.concept === "string",
-  );
->>>>>>> drivermode
 };
 
 function ScorePanel({ frame }: { frame: TelemetryFrame }) {
@@ -1458,13 +1433,9 @@ export default function SimulatorDashboard() {
   const [runId, setRunId] = useState(0);
   const [playbackId, setPlaybackId] = useState(0);
   const [analysis, setAnalysis] = useState<AIFeedback | null>(null);
-<<<<<<< HEAD
   const [chatMessages, setChatMessages] = useState<AIChatMessage[]>([]);
   const [analysisPending, setAnalysisPending] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
-=======
-  const [analyzing, setAnalyzing] = useState(false);
->>>>>>> drivermode
   const [setupWarning, setSetupWarning] = useState("");
   const [liveScore, setLiveScore] = useState<ScoreBreakdown>(emptyScore());
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1475,24 +1446,18 @@ export default function SimulatorDashboard() {
   const physicsRecordingArtifacts = useRef<Map<number, ArtifactPhysicsState[]>>(new Map());
   const physicsCollectedArtifacts = useRef<Set<string>>(new Set());
   const physicsRecordingShots = useRef<Map<number, ShotPhysicsState[]>>(new Map());
-<<<<<<< HEAD
   const lastAutoAnalysisRun = useRef<number | null>(null);
 
   const code = controlMode === "autonomous" ? autonomousCode : teleopCode;
   const setCode = controlMode === "autonomous" ? setAutonomousCode : setTeleopCode;
-  const frame = frames[index] || frames[0];
-  const frameScore = frame?.score ?? emptyScore();
-  const displayFrame = running && liveScore.totalPoints > frameScore.totalPoints ? { ...frame, score: liveScore } : frame;
-  const events = frames.slice(0, index + 1).filter((item) => item.event || item.warning);
-=======
   const teleopFrameRef = useRef(teleopFrame);
   const teleopTrailRef = useRef<TelemetryFrame[]>([]);
   const teleopArtifactsRef = useRef<SimArtifact[]>([]);
-  const teleopRuntimeRef = useRef<TeleopRuntime>({ previousActive: {}, shotId: 0, collectCooldown: 0 });
+  const teleopRuntimeRef = useRef<DriverTeleopRuntime>({ previousActive: {}, shotId: 0, collectCooldown: 0 });
   const driverModeRef = useRef(driverMode);
   const assignedGamepadsRef = useRef(assignedGamepads);
   const virtualGamepadsRef = useRef(virtualGamepads);
-  const teleopBindings = useMemo(() => parseTeleopBindings(code), [code]);
+  const teleopBindings = useMemo(() => parseTeleopBindings(teleopCode), [teleopCode]);
   const resolvedGamepads = useMemo(
     () => resolveDriverGamepads(driverMode, physicalGamepads, virtualGamepads, assignedGamepads),
     [assignedGamepads, driverMode, physicalGamepads, virtualGamepads],
@@ -1500,13 +1465,12 @@ export default function SimulatorDashboard() {
   const gamepad1Snapshot = resolvedGamepads[1];
   const gamepad2Snapshot = resolvedGamepads[2];
   const activeGamepadInfo = gamepad1Snapshot;
-
   const frame = teleopActive ? teleopFrame : frames[index] || frames[0];
-  const trail = teleopActive ? teleopTrail : frames.slice(0, index + 1);
+  const frameScore = frame?.score ?? emptyScore();
+  const displayFrame = running && liveScore.totalPoints > frameScore.totalPoints ? { ...frame, score: liveScore } : frame;
   const events = teleopActive
     ? teleopTrail.filter((item) => item.event || item.warning)
     : frames.slice(0, index + 1).filter((item) => item.event || item.warning);
->>>>>>> drivermode
   const displayStartPosition = displayPositionFromField({ x: startX, y: startY, heading: startHeading }, coordinateSystem);
   const resetLiveScore = () => {
     const next = emptyScore();
@@ -1539,7 +1503,6 @@ export default function SimulatorDashboard() {
   }, []);
 
   useEffect(() => {
-<<<<<<< HEAD
     const searchParams = new URLSearchParams(window.location.search);
     const requestedMode = searchParams.get("mode");
     const requestedLevel = searchParams.get("level");
@@ -1573,7 +1536,7 @@ export default function SimulatorDashboard() {
     return () => window.clearTimeout(updateLevel);
   }, []);
 
-=======
+  useEffect(() => {
     driverModeRef.current = driverMode;
     assignedGamepadsRef.current = assignedGamepads;
     virtualGamepadsRef.current = virtualGamepads;
@@ -1650,7 +1613,6 @@ export default function SimulatorDashboard() {
     });
   };
 
->>>>>>> drivermode
   const selectRobot = (id: RobotPresetId) => {
     const robot = robotPresets.find((item) => item.id === id)!;
     setRobotId(id);
@@ -2002,7 +1964,7 @@ export default function SimulatorDashboard() {
     resetLiveScore();
   };
 
-  const teleopFrame = (
+  const createKeyboardTeleopFrame = (
     runtime: TeleopRuntime,
     pose: StartPose,
     overrides: Partial<TelemetryFrame> = {},
@@ -2066,7 +2028,7 @@ export default function SimulatorDashboard() {
     runtime.time += SIMULATION_FRAME_SECONDS;
     stepArtifactPhysics(runtime.artifacts, nextPose, previousPose, robotWidth, robotLength, SIMULATION_FRAME_SECONDS);
 
-    appendTeleopFrame(teleopFrame(runtime, nextPose, {
+    appendTeleopFrame(createKeyboardTeleopFrame(runtime, nextPose, {
       intake: intakeMode,
       event: runtime.time <= SIMULATION_FRAME_SECONDS ? "TeleOp started" : "",
     }));
@@ -2077,7 +2039,7 @@ export default function SimulatorDashboard() {
     if (!runtime) return;
 
     if (runtime.artifactCount <= 0) {
-      appendTeleopFrame(teleopFrame(runtime, runtime.pose, {
+      appendTeleopFrame(createKeyboardTeleopFrame(runtime, runtime.pose, {
         warning: "No artifact loaded to shoot",
         event: "TeleOp shot blocked",
       }));
@@ -2086,7 +2048,7 @@ export default function SimulatorDashboard() {
 
     runtime.artifactCount -= 1;
     runtime.shotId += 1;
-    appendTeleopFrame(teleopFrame(runtime, runtime.pose, {
+    appendTeleopFrame(createKeyboardTeleopFrame(runtime, runtime.pose, {
       feeder: true,
       event: `TeleOp shoot ${TELEOP_SHOT_ANGLE} deg`,
       shot: {
@@ -2190,7 +2152,6 @@ export default function SimulatorDashboard() {
     setIndex(nextIndex);
   };
 
-<<<<<<< HEAD
   const requestAnalysis = useCallback(async (question?: string) => {
     const userMessage: AIChatMessage | null = question
       ? { id: `user-${Date.now()}`, role: "user", content: question, createdAt: Date.now() }
@@ -2300,77 +2261,6 @@ export default function SimulatorDashboard() {
 
     return frames.slice(0, index + 1);
   }, [controlMode, frames, index]);
-=======
-  const requestAIFeedback = () => {
-    if (running || !hasRun || analyzing) return;
-
-    const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
-    if (!selectedRobot) {
-      setSetupWarning("Robot configuration is missing");
-      return;
-    }
-
-    const runAnalysis = async () => {
-      setAnalyzing(true);
-      setSetupWarning("");
-
-      try {
-        const recentFrames = frames.slice(-180);
-        const response = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            goal,
-            code,
-            robotSetup: {
-              robotId,
-              robotName: selectedRobot.name,
-              width: selectedRobot.width,
-              length: selectedRobot.length,
-              coordinateSystem,
-              startPose: { x: startX, y: startY, heading: startHeading },
-              preloadCount,
-              selectedArtifactRows,
-            },
-            telemetry: recentFrames,
-          }),
-        });
-
-        const result: unknown = await response.json();
-
-        if (!response.ok) {
-          const message = typeof result === "object" && result && "error" in result && typeof result.error === "string"
-            ? result.error
-            : "AI analysis request failed.";
-          throw new Error(message);
-        }
-
-        if (!isAIFeedback(result)) {
-          throw new Error("AI response format was invalid.");
-        }
-
-        setAnalysis(result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        setAnalysis({
-          headline: "AI analysis unavailable",
-          status: "warning",
-          happened: "The simulator generated telemetry, but the AI service could not return a valid analysis.",
-          cause: message,
-          evidence: ["Goal, code, robot setup, and recent telemetry were prepared", "No usable AI feedback object was returned"],
-          fix: "Check OPENAI_API_KEY and OPENAI_MODEL configuration, then retry analysis.",
-          optimization: "Reduce prompt size by shortening code or telemetry if provider limits are hit.",
-          concept: "The analyzer requires a live model endpoint and a valid structured JSON response.",
-        });
-      } finally {
-        setAnalyzing(false);
-        setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-      }
-    };
-
-    void runAnalysis();
-  };
->>>>>>> drivermode
 
   const shootSignal = frame.shot ? (runId + 1) * 1000000 + playbackId * 10000 + frame.shot.id : -1;
 
@@ -2397,7 +2287,7 @@ export default function SimulatorDashboard() {
             setGoal,
             code,
             setCode,
-            running,
+            running: running || teleopActive,
             robotId,
             allianceColor,
             setAllianceColor: updateAllianceColor,
@@ -2417,29 +2307,18 @@ export default function SimulatorDashboard() {
           }}
           onRobot={selectRobot}
           onRun={run}
-<<<<<<< HEAD
-          onStop={stopSimulation}
+          onStop={stopActiveMode}
           onAnalyze={() => void requestAnalysis()}
           analyzing={analysisPending}
-=======
-          onStop={stopActiveMode}
-          onAnalyze={requestAIFeedback}
-          analyzing={analyzing}
->>>>>>> drivermode
           canAnalyze={hasRun}
         />
         <div className="workspace">
           <div className="field-row">
             <FieldSimulator
               frame={frame}
-<<<<<<< HEAD
-              trail={fieldTrail}
-              showRobotTrail={controlMode !== "teleop"}
-              running={running}
-=======
-              trail={trail}
+              trail={teleopActive ? teleopTrail : fieldTrail}
+              showRobotTrail={!teleopActive && controlMode !== "teleop"}
               running={running || teleopActive}
->>>>>>> drivermode
               robotId={robotId}
               allianceColor={allianceColor}
               coordinateSystem={coordinateSystem}
@@ -2463,14 +2342,10 @@ export default function SimulatorDashboard() {
               onSeek={seek}
               onTogglePlayback={togglePlayback}
             />
-<<<<<<< HEAD
             <div className="right-rail">
               <ScorePanel frame={displayFrame} />
-              <TelemetryPanel frame={frame} events={events} progress={(index / Math.max(1, frames.length - 1)) * 100} coordinateSystem={coordinateSystem} />
+              <TelemetryPanel frame={frame} events={events} progress={teleopActive ? 0 : (index / Math.max(1, frames.length - 1)) * 100} coordinateSystem={coordinateSystem} />
             </div>
-=======
-            <TelemetryPanel frame={frame} events={events} progress={teleopActive ? 0 : (index / Math.max(1, frames.length - 1)) * 100} coordinateSystem={coordinateSystem} />
->>>>>>> drivermode
           </div>
           <section className="driver-assign-panel panel">
             <div className="driver-assign-head">
