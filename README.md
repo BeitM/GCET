@@ -197,14 +197,14 @@ The current implementation includes:
 - A Next.js landing page and simulator dashboard
 - An interactive 3D DECODE field with Rapier artifact and shot physics
 - One preset turret-shooter robot, configurable start pose, alliance, preload, and artifact rows
-- A small RoboLab autonomous command DSL plus keyboard TeleOp controls
+- A small RoboLab autonomous command DSL, including JavaScript-style per-motor `setPower` calls and open-loop mecanum motion, plus keyboard TeleOp controls
 - Telemetry recording, timeline playback, rule warnings, and classifier scoring
 - Deterministic mentor feedback with optional OpenAI-generated analysis and follow-up chat
 - A validated and bounded `/api/analyze` route that receives code, robot setup, and compact telemetry
 
 Current limitations:
 
-- The code editor executes a limited command DSL, not FTC SDK Java.
+- The code editor executes supported function-call statements, not arbitrary JavaScript or FTC SDK Java.
 - Physics and DECODE rules are partial rather than competition-accurate.
 - Only one robot preset and one season are active.
 - CAD import, custom robot construction, accounts, persistence, and team workflows are placeholders.

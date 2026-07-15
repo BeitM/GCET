@@ -9,6 +9,7 @@ import { InputPanel } from "@/components/InputPanel";
 import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { selectAnalysisFrames } from "@/lib/analysis";
+import { clampMotorPower, driveAxesFromMotorPowers, mecanumMotorPowers, setMotorPower, sidePowersFromMotors, stoppedMotorPowers, type MotorId, type RobotMotorPowers } from "@/lib/motors";
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -18,6 +19,7 @@ type TeleopRuntime = {
   time: number;
   leftEncoder: number;
   rightEncoder: number;
+  motorPowers: RobotMotorPowers;
   artifactCount: number;
   shotId: number;
   artifacts: SimArtifact[];
@@ -29,6 +31,9 @@ type RobotCommand =
   | { type: "spinFlywheel"; rpm: number }
   | { type: "shoot"; angle: number }
   | { type: "intake"; mode: "in" | "out" | "off" }
+  | { type: "setMotor"; motor: MotorId; power: number }
+  | { type: "setDriveMotors"; powers: Pick<RobotMotorPowers, "frontLeftDrive" | "frontRightDrive" | "rearLeftDrive" | "rearRightDrive"> }
+  | { type: "stopMotors"; scope: "drive" | "all" }
   | { type: "wait"; seconds: number };
 
 const defaultGoal = "Test robot code on the DECODE field.";
@@ -64,6 +69,10 @@ const AUTO_DRIVE_SPEED_INCHES_PER_SECOND = 36;
 const AUTO_TURN_DEGREES_PER_SECOND = 270;
 const TELEOP_DRIVE_SPEED_INCHES_PER_SECOND = 54;
 const TELEOP_TURN_DEGREES_PER_SECOND = 180;
+const SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND = 54;
+const SCRIPT_TURN_DEGREES_PER_SECOND = 180;
+const MOTOR_ENCODER_TICKS_PER_INCH = 5.8;
+const FLYWHEEL_MAX_RPM = 6000;
 const TELEOP_SHOT_RPM = 2400;
 const TELEOP_SHOT_ANGLE = 60;
 const AUTONOMOUS_PERIOD_SECONDS = 30;
@@ -104,6 +113,7 @@ const baseFrame: TelemetryFrame = {
   heading: defaultStartPose.heading,
   leftPower: 0,
   rightPower: 0,
+  motorPowers: { ...stoppedMotorPowers },
   leftEncoder: 0,
   rightEncoder: 0,
   shooterTarget: 0,
@@ -478,6 +488,36 @@ function parseArgs(raw: string) {
   return raw.split(",").map((arg) => Number(arg.trim())).filter((value) => Number.isFinite(value));
 }
 
+const motorChannelAliases: Record<string, MotorId> = {
+  frontleftdrive: "frontLeftDrive",
+  frontleftmotor: "frontLeftDrive",
+  frontrightdrive: "frontRightDrive",
+  frontrightmotor: "frontRightDrive",
+  rearleftdrive: "rearLeftDrive",
+  rearleftmotor: "rearLeftDrive",
+  rearrightdrive: "rearRightDrive",
+  rearrightmotor: "rearRightDrive",
+  intakemotor: "intake",
+  intake: "intake",
+  leftflywheel: "flywheelLeft",
+  flywheelleft: "flywheelLeft",
+  rightflywheel: "flywheelRight",
+  flywheelright: "flywheelRight",
+  turretmotor: "turret",
+  turret: "turret",
+};
+
+const motorPowerFunctionAliases: Record<string, MotorId> = {
+  setfrontleftpower: "frontLeftDrive",
+  setfrontrightpower: "frontRightDrive",
+  setrearleftpower: "rearLeftDrive",
+  setrearrightpower: "rearRightDrive",
+  setintakepower: "intake",
+  setleftflywheelpower: "flywheelLeft",
+  setrightflywheelpower: "flywheelRight",
+  setturretpower: "turret",
+};
+
 function parseRobotCode(source: string): RobotCommand[] {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -485,6 +525,16 @@ function parseRobotCode(source: string): RobotCommand[] {
     .map((line) => line.replace(/\/\/.*$/g, "").trim())
     .filter(Boolean)
     .map((line) => {
+      const memberCall = line.match(/^([a-zA-Z_][\w]*)\s*\.\s*setPower\s*\((.*)\)$/i);
+      if (memberCall) {
+        const motor = motorChannelAliases[memberCall[1].toLowerCase()];
+        const power = parseArgs(memberCall[2])[0];
+        if (motor && Number.isFinite(power)) {
+          return { type: "setMotor", motor, power: clampMotorPower(power) } satisfies RobotCommand;
+        }
+        return null;
+      }
+
       const match = line.match(/^([a-zA-Z_][\w]*)\s*\((.*)\)$/);
       if (!match) return null;
 
@@ -504,6 +554,22 @@ function parseRobotCode(source: string): RobotCommand[] {
       if (name === "intakespinin") return { type: "intake", mode: "in" } satisfies RobotCommand;
       if (name === "intakespinout") return { type: "intake", mode: "out" } satisfies RobotCommand;
       if (name === "intakestopspin" || name === "intakestopspini") return { type: "intake", mode: "off" } satisfies RobotCommand;
+      if (motorPowerFunctionAliases[name] && Number.isFinite(first)) {
+        return { type: "setMotor", motor: motorPowerFunctionAliases[name], power: clampMotorPower(first) } satisfies RobotCommand;
+      }
+      if (name === "setdrivemotorpowers" && args.length >= 4) {
+        return {
+          type: "setDriveMotors",
+          powers: {
+            frontLeftDrive: clampMotorPower(args[0]),
+            frontRightDrive: clampMotorPower(args[1]),
+            rearLeftDrive: clampMotorPower(args[2]),
+            rearRightDrive: clampMotorPower(args[3]),
+          },
+        } satisfies RobotCommand;
+      }
+      if (name === "stopdrivemotors") return { type: "stopMotors", scope: "drive" } satisfies RobotCommand;
+      if (name === "stopallmotors") return { type: "stopMotors", scope: "all" } satisfies RobotCommand;
       if (name === "wait") return { type: "wait", seconds: Math.max(0, first || 0) } satisfies RobotCommand;
       return null;
     })
@@ -647,6 +713,7 @@ function generateRobotCodeFrames(
   let shooterTarget = 0;
   let shooterRpm = 0;
   let intake: TelemetryFrame["intake"] = "off";
+  let motorPowers: RobotMotorPowers = { ...stoppedMotorPowers };
   let artifactCount = safePreloadCount;
   let shotId = 0;
   let collectedArtifacts = 0;
@@ -667,8 +734,10 @@ function generateRobotCodeFrames(
   };
 
   const pushFrame = (overrides: Partial<TelemetryFrame> = {}) => {
-    const leftPowerValue = overrides.leftPower ?? 0;
-    const rightPowerValue = overrides.rightPower ?? 0;
+    const frameMotorPowers = overrides.motorPowers ?? motorPowers;
+    const sidePowers = sidePowersFromMotors(frameMotorPowers);
+    const leftPowerValue = overrides.leftPower ?? sidePowers.leftPower;
+    const rightPowerValue = overrides.rightPower ?? sidePowers.rightPower;
     const dt = Math.max(time - lastTelemetryTime, SIMULATION_FRAME_SECONDS);
     const linearSpeed = Math.hypot(current.x - lastTelemetryPose.x, current.y - lastTelemetryPose.y) / dt;
     if (linearSpeed > 0 || leftPowerValue !== 0 || rightPowerValue !== 0) speedSamples.push(linearSpeed);
@@ -684,6 +753,9 @@ function generateRobotCodeFrames(
       shooterTarget,
       shooterRpm,
       intake,
+      motorPowers: { ...frameMotorPowers },
+      leftPower: leftPowerValue,
+      rightPower: rightPowerValue,
       artifactCount,
       artifacts: cloneArtifactFrameState(artifacts),
       decodeTelemetry: createDecodeTelemetryMetrics({
@@ -781,12 +853,43 @@ function generateRobotCodeFrames(
     for (let i = 1; i <= steps; i++) {
       const dt = seconds / steps;
       time += dt;
-      stepArtifactPhysics(artifacts, current, current, robotWidth, robotLength, dt);
+
+      const axes = driveAxesFromMotorPowers(motorPowers);
+      const sidePowers = sidePowersFromMotors(motorPowers);
+      const headingDeltaForStep = -axes.turnRight * SCRIPT_TURN_DEGREES_PER_SECOND * dt;
+      const driveHeading = normalizeHeading(current.heading + headingDeltaForStep / 2);
+      const headingRadians = driveHeading * THREE_DEGREES_TO_RADIANS;
+      const forward = { x: Math.cos(headingRadians), y: -Math.sin(headingRadians) };
+      const right = { x: Math.sin(headingRadians), y: Math.cos(headingRadians) };
+      const intendedPose = {
+        x: current.x + (forward.x * axes.forward + right.x * axes.strafeRight) * SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND * dt,
+        y: current.y + (forward.y * axes.forward + right.y * axes.strafeRight) * SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND * dt,
+        heading: normalizeHeading(current.heading + headingDeltaForStep),
+      };
+      const nextPose = constrainRobotPose(intendedPose, robotWidth, robotLength);
+      const isMoving = Math.abs(axes.forward) > 0.0001 || Math.abs(axes.strafeRight) > 0.0001 || Math.abs(axes.turnRight) > 0.0001;
+
+      if (isMoving) {
+        stepPhysicsTo(nextPose, dt);
+        leftEncoder += sidePowers.leftPower * SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND * MOTOR_ENCODER_TICKS_PER_INCH * dt;
+        rightEncoder += sidePowers.rightPower * SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND * MOTOR_ENCODER_TICKS_PER_INCH * dt;
+      } else {
+        stepArtifactPhysics(artifacts, current, current, robotWidth, robotLength, dt);
+      }
+
+      if ((Math.abs(nextPose.x - intendedPose.x) > 0.001 || Math.abs(nextPose.y - intendedPose.y) > 0.001)
+        && !ruleViolations.some((violation) => violation.code === "FIELD_BOUNDARY" && violation.message.includes("motor power"))) {
+        addRuleViolation("FIELD_BOUNDARY", "Drive motor power was constrained to keep the robot inside the field.");
+      }
+
+      const flywheelTarget = (Math.abs(motorPowers.flywheelLeft) + Math.abs(motorPowers.flywheelRight)) / 2 * FLYWHEEL_MAX_RPM;
+      shooterTarget = flywheelTarget;
+      const maxRpmStep = 1800 / FLYWHEEL_RAMP_TIME_SCALE * dt;
+      shooterRpm += clamp(flywheelTarget - shooterRpm, -maxRpmStep, maxRpmStep);
+
       const intakeEvent = collectIntakeContact();
       const frameEvent = [i === 1 ? event : "", intakeEvent].filter(Boolean).join("; ");
       pushFrame({
-        leftPower: 0,
-        rightPower: 0,
         feeder: false,
         event: frameEvent,
         warning: intakeEvent === "controlled 4 artifacts" ? "controlled 4 artifacts" : undefined,
@@ -794,7 +897,7 @@ function generateRobotCodeFrames(
     }
   };
 
-  const advanceDrive = (target: StartPose, event: string, gradualHeading: boolean) => {
+  const advanceDrive = (target: StartPose, event: string, gradualHeading: boolean, drivePowers = mecanumMotorPowers(0.48, 0, 0)) => {
     const start = { ...current };
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
     const turnTime = gradualHeading ? Math.abs(headingDelta(start.heading, target.heading)) / AUTO_TURN_DEGREES_PER_SECOND : 0;
@@ -814,9 +917,15 @@ function generateRobotCodeFrames(
         heading: gradualHeading ? lerpHeading(start.heading, target.heading, motionT) : start.heading,
       }, dt);
       const contactEvent = collectIntakeContact();
+      const frameMotorPowers = {
+        ...motorPowers,
+        frontLeftDrive: drivePowers.frontLeftDrive,
+        frontRightDrive: drivePowers.frontRightDrive,
+        rearLeftDrive: drivePowers.rearLeftDrive,
+        rearRightDrive: drivePowers.rearRightDrive,
+      };
       pushFrame({
-        leftPower: 0.48,
-        rightPower: 0.48,
+        motorPowers: frameMotorPowers,
         feeder: false,
         event: [i === 1 ? event : "", contactEvent].filter(Boolean).join("; "),
         warning: contactEvent === "controlled 4 artifacts" ? "controlled 4 artifacts" : undefined,
@@ -845,9 +954,15 @@ function generateRobotCodeFrames(
         heading: lerpHeading(start.heading, heading, motionT),
       }, dt);
       const contactEvent = collectIntakeContact();
+      const frameDrivePowers = mecanumMotorPowers(0, 0, delta >= 0 ? -0.36 : 0.36);
       pushFrame({
-        leftPower: delta >= 0 ? -0.36 : 0.36,
-        rightPower: delta >= 0 ? 0.36 : -0.36,
+        motorPowers: {
+          ...motorPowers,
+          frontLeftDrive: frameDrivePowers.frontLeftDrive,
+          frontRightDrive: frameDrivePowers.frontRightDrive,
+          rearLeftDrive: frameDrivePowers.rearLeftDrive,
+          rearRightDrive: frameDrivePowers.rearRightDrive,
+        },
         feeder: false,
         event: [i === 1 ? `turn ${heading.toFixed(0)} deg` : "", contactEvent].filter(Boolean).join("; "),
         warning: contactEvent === "controlled 4 artifacts" ? "controlled 4 artifacts" : undefined,
@@ -894,7 +1009,15 @@ function generateRobotCodeFrames(
       if (Math.abs(safeTarget.x - target.x) > 0.001 || Math.abs(safeTarget.y - target.y) > 0.001) {
         addRuleViolation("FIELD_BOUNDARY", `Drive command was clamped to keep the ${robotWidth} x ${robotLength} in robot inside the field.`);
       }
-      advanceDrive(safeTarget, `drive ${command.direction} ${distance.toFixed(1)} in`, false);
+      const signedSpeed = command.distance >= 0 ? 0.48 : -0.48;
+      const drivePowers = command.direction === "forward"
+        ? mecanumMotorPowers(signedSpeed, 0, 0)
+        : command.direction === "backward"
+          ? mecanumMotorPowers(-signedSpeed, 0, 0)
+          : command.direction === "right"
+            ? mecanumMotorPowers(0, signedSpeed, 0)
+            : mecanumMotorPowers(0, -signedSpeed, 0);
+      advanceDrive(safeTarget, `drive ${command.direction} ${distance.toFixed(1)} in`, false, drivePowers);
     }
 
     if (command.type === "driveTo") {
@@ -926,6 +1049,12 @@ function generateRobotCodeFrames(
     if (command.type === "spinFlywheel") {
       const startRpm = shooterRpm;
       shooterTarget = command.rpm;
+      const flywheelPower = clampMotorPower(command.rpm / FLYWHEEL_MAX_RPM);
+      motorPowers = {
+        ...motorPowers,
+        flywheelLeft: flywheelPower,
+        flywheelRight: -flywheelPower,
+      };
       const rampSeconds = Math.max(0.17, Math.abs(command.rpm - startRpm) / 1800 * FLYWHEEL_RAMP_TIME_SCALE);
       const steps = Math.max(3, Math.ceil(rampSeconds / SIMULATION_FRAME_SECONDS));
       for (let i = 1; i <= steps; i++) {
@@ -973,8 +1102,42 @@ function generateRobotCodeFrames(
 
     if (command.type === "intake") {
       intake = command.mode;
+      motorPowers = setMotorPower(motorPowers, "intake", command.mode === "in" ? 1 : command.mode === "out" ? -1 : 0);
       const releaseEvent = command.mode === "out" ? releaseStoredArtifacts() : "";
       advanceWait(0.2, [command.mode === "in" ? "intakeSpinIn" : command.mode === "out" ? "intakeSpinOut" : "intakeStopSpin", releaseEvent].filter(Boolean).join("; "));
+    }
+
+    if (command.type === "setMotor") {
+      motorPowers = setMotorPower(motorPowers, command.motor, command.power);
+      if (command.motor === "intake") {
+        intake = command.power > 0 ? "in" : command.power < 0 ? "out" : "off";
+      }
+      if (command.motor === "flywheelLeft" || command.motor === "flywheelRight") {
+        shooterTarget = (Math.abs(motorPowers.flywheelLeft) + Math.abs(motorPowers.flywheelRight)) / 2 * FLYWHEEL_MAX_RPM;
+      }
+      pushFrame({ event: `${command.motor}.setPower(${command.power.toFixed(2)})` });
+    }
+
+    if (command.type === "setDriveMotors") {
+      motorPowers = { ...motorPowers, ...command.powers };
+      pushFrame({ event: `setDriveMotorPowers(${Object.values(command.powers).map((power) => power.toFixed(2)).join(", ")})` });
+    }
+
+    if (command.type === "stopMotors") {
+      motorPowers = command.scope === "all"
+        ? { ...stoppedMotorPowers }
+        : {
+            ...motorPowers,
+            frontLeftDrive: 0,
+            frontRightDrive: 0,
+            rearLeftDrive: 0,
+            rearRightDrive: 0,
+          };
+      if (command.scope === "all") {
+        intake = "off";
+        shooterTarget = 0;
+      }
+      pushFrame({ event: command.scope === "all" ? "stopAllMotors" : "stopDriveMotors" });
     }
 
     if (command.type === "wait") {
@@ -1106,6 +1269,7 @@ export default function SimulatorDashboard() {
   };
   const cloneFrameForRecording = (item: TelemetryFrame): TelemetryFrame => ({
     ...item,
+    motorPowers: { ...item.motorPowers },
     artifacts: item.artifacts ? item.artifacts.map((artifact) => ({ ...artifact })) : undefined,
     shots: item.shots ? item.shots.map((shot) => ({ ...shot })) : undefined,
     score: item.score ? cloneScore(item.score) : undefined,
@@ -1451,6 +1615,9 @@ export default function SimulatorDashboard() {
     rightEncoder: runtime.rightEncoder,
     shooterTarget: TELEOP_SHOT_RPM,
     shooterRpm: TELEOP_SHOT_RPM,
+    motorPowers: { ...runtime.motorPowers },
+    leftPower: sidePowersFromMotors(runtime.motorPowers).leftPower,
+    rightPower: sidePowersFromMotors(runtime.motorPowers).rightPower,
     artifactCount: runtime.artifactCount,
     artifacts: cloneArtifactFrameState(runtime.artifacts),
     ...overrides,
@@ -1467,6 +1634,14 @@ export default function SimulatorDashboard() {
     const forwardAxis = (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0);
     const strafeAxis = (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0);
     const intakeMode: TelemetryFrame["intake"] = keys.has("z") ? "in" : "off";
+    const driveMotorPowers = mecanumMotorPowers(forwardAxis, strafeAxis, -turnDirection);
+    runtime.motorPowers = {
+      ...driveMotorPowers,
+      intake: intakeMode === "in" ? 1 : 0,
+      flywheelLeft: TELEOP_SHOT_RPM / FLYWHEEL_MAX_RPM,
+      flywheelRight: -TELEOP_SHOT_RPM / FLYWHEEL_MAX_RPM,
+      turret: 0,
+    };
     const isDriving = forwardAxis !== 0 || strafeAxis !== 0;
     const driveHeading = isDriving && turnDirection !== 0
       ? lerpHeading(runtime.pose.heading, nextHeading, 0.5)
@@ -1493,8 +1668,6 @@ export default function SimulatorDashboard() {
     stepArtifactPhysics(runtime.artifacts, nextPose, previousPose, robotWidth, robotLength, SIMULATION_FRAME_SECONDS);
 
     appendTeleopFrame(teleopFrame(runtime, nextPose, {
-      leftPower: clamp(forwardAxis - strafeAxis - turnDirection * 0.45, -1, 1),
-      rightPower: clamp(forwardAxis + strafeAxis + turnDirection * 0.45, -1, 1),
       intake: intakeMode,
       event: runtime.time <= SIMULATION_FRAME_SECONDS ? "TeleOp started" : "",
     }));
@@ -1534,6 +1707,11 @@ export default function SimulatorDashboard() {
       artifactCount: safePreloadCount,
       shooterTarget: TELEOP_SHOT_RPM,
       shooterRpm: TELEOP_SHOT_RPM,
+      motorPowers: {
+        ...stoppedMotorPowers,
+        flywheelLeft: TELEOP_SHOT_RPM / FLYWHEEL_MAX_RPM,
+        flywheelRight: -TELEOP_SHOT_RPM / FLYWHEEL_MAX_RPM,
+      },
       artifacts: cloneArtifactFrameState(artifacts),
       event: "TeleOp ready",
     };
@@ -1545,6 +1723,11 @@ export default function SimulatorDashboard() {
       time: 0,
       leftEncoder: 0,
       rightEncoder: 0,
+      motorPowers: {
+        ...stoppedMotorPowers,
+        flywheelLeft: TELEOP_SHOT_RPM / FLYWHEEL_MAX_RPM,
+        flywheelRight: -TELEOP_SHOT_RPM / FLYWHEEL_MAX_RPM,
+      },
       artifactCount: safePreloadCount,
       shotId: 0,
       artifacts,

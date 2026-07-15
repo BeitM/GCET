@@ -12,7 +12,7 @@ type TelemetryOption = {
 const telemetryOptions: TelemetryOption[] = [
   { id: "position", label: "Position", description: "X / Y field coordinates" },
   { id: "heading", label: "Heading", description: "Field-relative robot angle" },
-  { id: "drivePower", label: "Drive power", description: "Left and right command output" },
+  { id: "drivePower", label: "Drive motors", description: "Front-left, front-right, rear-left, and rear-right power" },
   { id: "encoders", label: "Encoders", description: "Left and right drivetrain ticks" },
   { id: "progress", label: "Run progress", description: "Simulation completion percentage" },
   { id: "launcher", label: "Launcher", description: "Shooter RPM and target" },
@@ -113,9 +113,9 @@ export function TelemetryPanel({ frame, events, progress, coordinateSystem }: { 
         accent: Math.abs(frame.heading) > 8 ? "warn" : "",
       },
       drivePower: {
-        label: "Drive power",
-        value: `${frame.leftPower.toFixed(2)} / ${frame.rightPower.toFixed(2)}`,
-        detail: "Left / right",
+        label: "Drive motors",
+        value: `${frame.motorPowers.frontLeftDrive.toFixed(2)} / ${frame.motorPowers.frontRightDrive.toFixed(2)} / ${frame.motorPowers.rearLeftDrive.toFixed(2)} / ${frame.motorPowers.rearRightDrive.toFixed(2)}`,
+        detail: "FL / FR / RL / RR",
       },
       encoders: {
         label: "Encoders",

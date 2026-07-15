@@ -28,6 +28,22 @@ const commandReferenceGroups = [
     ],
   },
   {
+    type: "Motor power",
+    commands: [
+      { name: "frontLeftDrive.setPower(value)", snippet: "frontLeftDrive.setPower(0.6)", detail: "Set front-left drive power from -1.0 to 1.0." },
+      { name: "frontRightDrive.setPower(value)", snippet: "frontRightDrive.setPower(0.6)", detail: "Set front-right drive power from -1.0 to 1.0." },
+      { name: "rearLeftDrive.setPower(value)", snippet: "rearLeftDrive.setPower(0.6)", detail: "Set rear-left drive power from -1.0 to 1.0." },
+      { name: "rearRightDrive.setPower(value)", snippet: "rearRightDrive.setPower(0.6)", detail: "Set rear-right drive power from -1.0 to 1.0." },
+      { name: "setDriveMotorPowers(fl, fr, rl, rr)", snippet: "setDriveMotorPowers(0.6, 0.6, 0.6, 0.6)", detail: "Set all four mecanum drive channels together." },
+      { name: "intakeMotor.setPower(value)", snippet: "intakeMotor.setPower(1)", detail: "Positive power collects; negative power reverses." },
+      { name: "leftFlywheel.setPower(value)", snippet: "leftFlywheel.setPower(0.8)", detail: "Set the left shooter motor power." },
+      { name: "rightFlywheel.setPower(value)", snippet: "rightFlywheel.setPower(-0.8)", detail: "Set the mirrored right shooter motor power." },
+      { name: "turretMotor.setPower(value)", snippet: "turretMotor.setPower(0.2)", detail: "Rotate the turret gearbox at proportional speed." },
+      { name: "stopDriveMotors()", snippet: "stopDriveMotors()", detail: "Stop all four drive channels." },
+      { name: "stopAllMotors()", snippet: "stopAllMotors()", detail: "Stop drive and every powered mechanism." },
+    ],
+  },
+  {
     type: "Shooter",
     commands: [
       { name: "spinFlywheel(value)", snippet: "spinFlywheel(3600)", detail: "Ramp flywheel to target RPM." },
@@ -46,7 +62,7 @@ const commandReferenceGroups = [
   {
     type: "Timing",
     commands: [
-      { name: "wait(value)", snippet: "wait(1)", detail: "Wait for seconds." },
+      { name: "wait(value)", snippet: "wait(1)", detail: "Advance for seconds while current motor powers remain active." },
     ],
   },
 ];

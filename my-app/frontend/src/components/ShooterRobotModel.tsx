@@ -3,7 +3,9 @@
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import * as THREE from "three";
-import { AllianceColor, TelemetryFrame } from "@/lib/types";
+import type { AllianceColor, TelemetryFrame } from "@/lib/types";
+import type { MotorId, RobotMotorPowers } from "@/lib/motors";
+import { stoppedMotorPowers } from "@/lib/motors";
 
 type ShooterRobotModelProps = {
   frame: TelemetryFrame;
@@ -13,300 +15,300 @@ type ShooterRobotModelProps = {
   allianceColor: AllianceColor;
 };
 
-const aluminum = "#a9b5ba";
-const darkMetal = "#172126";
-const motorYellow = "#d9a12e";
-const allianceAccent = {
-  blue: { color: "#527dff", emissive: "#1e397c" },
-  red: { color: "#ff4d5e", emissive: "#7f1722" },
+const MODEL_FOOTPRINT_METERS = 0.4318;
+const aluminum = "#aebac0";
+const motorGold = "#d7a22e";
+const rotationDecal = "#f4df5d";
+const shellTint: Record<AllianceColor, string> = {
+  blue: "#7babb7",
+  red: "#b77b82",
 };
 
-function MecanumModule({
+function MotorCan({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position} rotation={[0, 0, Math.PI / 2]}>
+      <mesh castShadow>
+        <cylinderGeometry args={[0.027, 0.027, 0.07, 22]} />
+        <meshStandardMaterial color={motorGold} metalness={0.62} roughness={0.33} />
+      </mesh>
+      <mesh position={[0, 0.045, 0]} castShadow>
+        <cylinderGeometry args={[0.024, 0.024, 0.022, 22]} />
+        <meshStandardMaterial color="#808d93" metalness={0.86} roughness={0.24} />
+      </mesh>
+      <mesh position={[0, -0.044, 0]} castShadow>
+        <cylinderGeometry args={[0.028, 0.028, 0.018, 22]} />
+        <meshStandardMaterial color="#252e32" metalness={0.35} roughness={0.55} />
+      </mesh>
+    </group>
+  );
+}
+
+function RotationDecal({ face, radius }: { face: number; radius: number }) {
+  return (
+    <mesh position={[face, 0, 0]} castShadow>
+      <boxGeometry args={[0.003, 0.01, radius * 1.68]} />
+      <meshStandardMaterial color={rotationDecal} emissive="#594d09" emissiveIntensity={0.45} roughness={0.5} />
+    </mesh>
+  );
+}
+
+function DriveWheel({
   position,
-  rollerDirection,
   power,
-  accentColor,
 }: {
   position: [number, number, number];
-  rollerDirection: 1 | -1;
   power: number;
-  accentColor: string;
 }) {
   const wheel = useRef<THREE.Group>(null);
-  const radius = 0.05;
+  const side = Math.sign(position[0]);
 
   useFrame((_, delta) => {
-    if (wheel.current) wheel.current.rotation.x += power * delta * 12;
+    if (wheel.current) wheel.current.rotation.x += power * delta * 11;
   });
 
   return (
-    <group position={position}>
-      <mesh position={[-Math.sign(position[0]) * 0.043, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.026, 0.026, 0.065, 20]} />
-        <meshStandardMaterial color={motorYellow} metalness={0.58} roughness={0.35} />
-      </mesh>
-      <group ref={wheel}>
+    <group>
+      <group ref={wheel} position={position}>
         <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[radius, radius, 0.034, 28]} />
-          <meshStandardMaterial color="#12181b" roughness={0.78} />
+          <cylinderGeometry args={[0.052, 0.052, 0.038, 30]} />
+          <meshStandardMaterial color="#11171a" roughness={0.78} />
         </mesh>
         <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.021, 0.021, 0.039, 20]} />
+          <cylinderGeometry args={[0.022, 0.022, 0.043, 22]} />
           <meshStandardMaterial color={aluminum} metalness={0.84} roughness={0.25} />
         </mesh>
-        {Array.from({ length: 9 }, (_, index) => {
-          const angle = index * Math.PI * 2 / 9;
-          return (
-            <mesh
-              key={index}
-              position={[0, Math.sin(angle) * radius, Math.cos(angle) * radius]}
-              rotation={[angle, 0, rollerDirection * 0.58]}
-              castShadow
-            >
-              <capsuleGeometry args={[0.007, 0.025, 4, 8]} />
-              <meshStandardMaterial color={accentColor} roughness={0.72} />
-            </mesh>
-          );
-        })}
+        <RotationDecal face={-0.0215} radius={0.052} />
+        <RotationDecal face={0.0215} radius={0.052} />
       </group>
+      <MotorCan position={[position[0] - side * 0.073, position[1], position[2]]} />
     </group>
   );
 }
 
-function PoweredRoller({
-  position,
-  radius,
-  active,
-  accentColor,
-}: {
-  position: [number, number, number];
-  radius: number;
-  active: boolean;
-  accentColor: string;
-}) {
-  const roller = useRef<THREE.Group>(null);
+function IntakeAssembly({ power }: { power: number }) {
+  const rollers = useRef<Array<THREE.Group | null>>([]);
+  const brush = useRef<THREE.Group>(null);
+  const rollerSpecs = [
+    { y: 0.064, z: -0.27, radius: 0.029 },
+    { y: 0.116, z: -0.224, radius: 0.027 },
+    { y: 0.164, z: -0.174, radius: 0.025 },
+  ];
 
   useFrame((_, delta) => {
-    if (roller.current && active) roller.current.rotation.x += delta * 15;
+    rollers.current.forEach((roller, index) => {
+      if (roller) roller.rotation.x += power * delta * (13 + index * 1.5);
+    });
+    if (brush.current) brush.current.rotation.x += power * delta * 17;
   });
 
   return (
-    <group position={position}>
-      <group ref={roller}>
-        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[radius, radius, 0.29, 24]} />
-          <meshStandardMaterial color="#28353a" roughness={0.7} />
-        </mesh>
-        {[-0.12, -0.06, 0, 0.06, 0.12].map((x) => (
-          <mesh key={x} position={[x, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-            <torusGeometry args={[radius + 0.003, 0.006, 8, 18]} />
-            <meshStandardMaterial color={accentColor} roughness={0.65} />
+    <group>
+      {rollerSpecs.map((roller, index) => (
+        <group
+          key={roller.z}
+          ref={(node) => {
+            rollers.current[index] = node;
+          }}
+          position={[0, roller.y, roller.z]}
+        >
+          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[roller.radius, roller.radius, 0.36, 24]} />
+            <meshStandardMaterial color="#26343a" roughness={0.7} />
           </mesh>
-        ))}
+          <RotationDecal face={-0.1815} radius={roller.radius} />
+          <RotationDecal face={0.1815} radius={roller.radius} />
+        </group>
+      ))}
+
+      <group ref={brush} position={[0, 0.197, -0.129]}>
+        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+          <cylinderGeometry args={[0.038, 0.038, 0.35, 24]} />
+          <meshStandardMaterial color="#5c4775" roughness={0.68} />
+        </mesh>
+        <RotationDecal face={-0.1765} radius={0.038} />
+        <RotationDecal face={0.1765} radius={0.038} />
       </group>
-      <mesh position={[0.175, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <cylinderGeometry args={[0.023, 0.023, 0.055, 18]} />
-        <meshStandardMaterial color={motorYellow} metalness={0.55} roughness={0.36} />
-      </mesh>
+
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[side * 0.19, 0.123, -0.205]} rotation={[-0.78, 0, 0]} castShadow>
+          <boxGeometry args={[0.019, 0.035, 0.25]} />
+          <meshStandardMaterial color="#829097" metalness={0.68} roughness={0.33} />
+        </mesh>
+      ))}
+      <MotorCan position={[0.204, 0.151, -0.171]} />
     </group>
   );
 }
 
-function TurretAssembly({ frame, running, accentColor, emissiveColor }: { frame: TelemetryFrame; running: boolean; accentColor: string; emissiveColor: string }) {
+function Flywheel({
+  position,
+  power,
+  wheelRef,
+}: {
+  position: [number, number, number];
+  power: number;
+  wheelRef: React.RefObject<THREE.Group | null>;
+}) {
+  useFrame((_, delta) => {
+    if (wheelRef.current) wheelRef.current.rotation.x += power * delta * 23;
+  });
+
+  return (
+    <group ref={wheelRef} position={position}>
+      <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.062, 0.062, 0.036, 36]} />
+        <meshStandardMaterial color="#20282c" roughness={0.55} />
+      </mesh>
+      <RotationDecal face={-0.019} radius={0.062} />
+      <RotationDecal face={0.019} radius={0.062} />
+    </group>
+  );
+}
+
+function ShooterTurret({
+  frame,
+  powers,
+  running,
+}: {
+  frame: TelemetryFrame;
+  powers: RobotMotorPowers;
+  running: boolean;
+}) {
   const turret = useRef<THREE.Group>(null);
-  const flywheel = useRef<THREE.Group>(null);
+  const leftFlywheel = useRef<THREE.Group>(null);
+  const rightFlywheel = useRef<THREE.Group>(null);
   const feeder = useRef<THREE.Group>(null);
   const hood = useRef<THREE.Group>(null);
 
   useFrame((_, delta) => {
-    if (turret.current) turret.current.rotation.y = 0;
-
-    if (flywheel.current && running) {
-      flywheel.current.rotation.x += frame.shooterRpm * (Math.PI * 2 / 60) * delta;
-    }
-
-    if (feeder.current && running && frame.feeder) {
-      feeder.current.rotation.x += delta * 14;
-    }
-
+    if (turret.current) turret.current.rotation.y += powers.turret * delta * 1.25;
+    if (feeder.current && running && frame.feeder) feeder.current.rotation.x += delta * 14;
     if (hood.current) {
-      const rpmRatio = THREE.MathUtils.clamp(frame.shooterRpm / 3600, 0, 1);
-      const target = 0.04 + rpmRatio * 0.16;
-      hood.current.rotation.x = THREE.MathUtils.lerp(
-        hood.current.rotation.x,
-        target,
-        1 - Math.exp(-delta * 6),
-      );
+      const target = -0.12 - THREE.MathUtils.clamp(frame.shooterRpm / 6000, 0, 1) * 0.42;
+      hood.current.rotation.x = THREE.MathUtils.lerp(hood.current.rotation.x, target, 1 - Math.exp(-delta * 7));
     }
   });
 
   return (
-    <group position={[0, 0, 0.055]}>
-      <mesh position={[0, 0.065, 0]} castShadow>
-        <cylinderGeometry args={[0.142, 0.142, 0.026, 48]} />
-        <meshStandardMaterial color="#222e33" metalness={0.65} roughness={0.34} />
-      </mesh>
-      <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <torusGeometry args={[0.122, 0.008, 10, 48]} />
-        <meshStandardMaterial color={accentColor} emissive={emissiveColor} emissiveIntensity={0.28} metalness={0.4} roughness={0.4} />
+    <group position={[0, 0.205, 0.08]}>
+      <mesh castShadow>
+        <cylinderGeometry args={[0.145, 0.145, 0.026, 44]} />
+        <meshStandardMaterial color="#263238" metalness={0.58} roughness={0.38} />
       </mesh>
 
-      <group position={[0.137, 0.06, 0.025]}>
-        <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.022, 0.022, 0.065, 18]} />
-          <meshStandardMaterial color={motorYellow} metalness={0.55} roughness={0.35} />
-        </mesh>
-        <mesh position={[-0.036, 0.012, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.024, 0.024, 0.012, 18]} />
-          <meshStandardMaterial color="#87949a" metalness={0.78} roughness={0.3} />
-        </mesh>
-      </group>
-
-      <group ref={turret} position={[0, 0.083, 0]}>
+      <group ref={turret} position={[0, 0.025, 0]}>
         <mesh castShadow>
-          <cylinderGeometry args={[0.118, 0.118, 0.016, 40]} />
-          <meshStandardMaterial color="#37454b" metalness={0.52} roughness={0.4} />
+          <cylinderGeometry args={[0.12, 0.12, 0.018, 40]} />
+          <meshStandardMaterial color="#35444a" metalness={0.53} roughness={0.4} />
         </mesh>
 
-        {[-1, 1].map((side) => (
-          <group key={side}>
-            <mesh position={[side * 0.122, 0.105, 0.018]} rotation={[-0.08, 0, 0]} castShadow>
-              <boxGeometry args={[0.014, 0.205, 0.19]} />
-              <meshStandardMaterial color={aluminum} metalness={0.72} roughness={0.3} />
-            </mesh>
-            <mesh position={[side * 0.122, 0.025, -0.035]} castShadow>
-              <boxGeometry args={[0.028, 0.045, 0.075]} />
-              <meshStandardMaterial color="#26343a" metalness={0.44} roughness={0.48} />
-            </mesh>
-          </group>
-        ))}
+        <Flywheel position={[-0.072, 0.188, -0.026]} power={powers.flywheelLeft} wheelRef={leftFlywheel} />
+        <Flywheel position={[0.072, 0.188, -0.026]} power={powers.flywheelRight} wheelRef={rightFlywheel} />
+        <MotorCan position={[-0.142, 0.188, 0.032]} />
+        <MotorCan position={[0.142, 0.188, 0.032]} />
 
-        <group ref={feeder} position={[0, 0.055, -0.035]}>
+        <group ref={feeder} position={[0, 0.086, 0.07]}>
           <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.034, 0.034, 0.18, 20]} />
+            <cylinderGeometry args={[0.033, 0.033, 0.17, 22]} />
             <meshStandardMaterial color="#8f5ccc" roughness={0.6} />
           </mesh>
-          {[0, Math.PI / 2].map((angle) => (
-            <mesh key={angle} rotation={[angle, 0, 0]} castShadow>
-              <boxGeometry args={[0.19, 0.012, 0.012]} />
-              <meshStandardMaterial color="#d6c4ec" roughness={0.5} />
+        </group>
+
+        <group ref={hood} position={[0, 0.13, -0.038]}>
+          {[0, 1, 2].map((segment) => (
+            <mesh key={segment} position={[0, segment * 0.037, -segment * 0.024]} rotation={[-0.16 - segment * 0.17, 0, 0]} castShadow>
+              <boxGeometry args={[0.205, 0.012, 0.08]} />
+              <meshStandardMaterial color="#d6dfe2" metalness={0.5} roughness={0.35} />
             </mesh>
           ))}
         </group>
 
-        <mesh position={[0, 0.125, -0.018]} rotation={[-0.2, 0, 0]} castShadow>
-          <boxGeometry args={[0.205, 0.012, 0.17]} />
-          <meshStandardMaterial color="#3a484e" metalness={0.4} roughness={0.48} />
-        </mesh>
-
-        <group ref={flywheel} position={[0, 0.19, 0.055]}>
-          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.061, 0.061, 0.056, 36]} />
-            <meshStandardMaterial color="#242c30" roughness={0.58} />
+        {[-1, 1].map((side) => (
+          <mesh key={side} position={[side * 0.115, 0.122, 0.012]} rotation={[-0.1, 0, 0]} castShadow>
+            <boxGeometry args={[0.013, 0.24, 0.21]} />
+            <meshStandardMaterial color={aluminum} metalness={0.7} roughness={0.3} />
           </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.019, 0.019, 0.064, 20]} />
-            <meshStandardMaterial color={motorYellow} metalness={0.48} roughness={0.36} />
-          </mesh>
-        </group>
-        <mesh position={[0.095, 0.19, 0.055]} rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.025, 0.025, 0.1, 20]} />
-          <meshStandardMaterial color={motorYellow} metalness={0.58} roughness={0.34} />
-        </mesh>
-
-        <group ref={hood} position={[0, 0.115, 0.025]}>
-          {[
-            { y: 0.018, z: 0.04, angle: -0.18 },
-            { y: 0.055, z: 0.075, angle: -0.42 },
-            { y: 0.09, z: 0.092, angle: -0.66 },
-          ].map((segment) => (
-            <mesh key={segment.y} position={[0, segment.y, segment.z]} rotation={[segment.angle, 0, 0]} castShadow>
-              <boxGeometry args={[0.205, 0.012, 0.075]} />
-              <meshStandardMaterial color="#d5dde0" metalness={0.54} roughness={0.34} />
-            </mesh>
-          ))}
-          {[-1, 1].map((side) => (
-            <mesh key={side} position={[side * 0.105, 0.055, 0.065]} rotation={[-0.42, 0, 0]} castShadow>
-              <boxGeometry args={[0.012, 0.11, 0.11]} />
-              <meshStandardMaterial color="#6d7c83" metalness={0.62} roughness={0.34} />
-            </mesh>
-          ))}
-        </group>
-
-        <group position={[-0.142, 0.12, 0.02]}>
-          <mesh castShadow>
-            <boxGeometry args={[0.04, 0.055, 0.075]} />
-            <meshStandardMaterial color="#222b30" roughness={0.52} />
-          </mesh>
-          <mesh position={[0.024, 0, 0.025]} rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.019, 0.019, 0.01, 16]} />
-            <meshStandardMaterial color="#e5edf0" metalness={0.7} roughness={0.27} />
-          </mesh>
-        </group>
+        ))}
       </group>
+
+      <MotorCan position={[0.156, 0.055, 0.026]} />
+      <mesh position={[0.116, 0.055, 0.026]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.034, 0.034, 0.035, 26]} />
+        <meshStandardMaterial color="#65737a" metalness={0.78} roughness={0.28} />
+      </mesh>
+    </group>
+  );
+}
+
+function SimplifiedShell({ allianceColor }: { allianceColor: AllianceColor }) {
+  const panelMaterial = (
+    <meshPhysicalMaterial
+      color={shellTint[allianceColor]}
+      metalness={0.08}
+      roughness={0.28}
+      transparent
+      opacity={0.23}
+      transmission={0.18}
+      depthWrite={false}
+      side={THREE.DoubleSide}
+    />
+  );
+
+  return (
+    <group>
+      {[-1, 1].map((side) => (
+        <group key={side}>
+          <mesh position={[side * 0.188, 0.286, 0.045]} castShadow>
+            <boxGeometry args={[0.012, 0.29, 0.31]} />
+            {panelMaterial}
+          </mesh>
+          <mesh position={[side * 0.171, 0.222, -0.145]} rotation={[0, side * 0.08, -side * 0.1]} castShadow>
+            <boxGeometry args={[0.012, 0.19, 0.18]} />
+            {panelMaterial}
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, 0.252, 0.206]} rotation={[0.16, 0, 0]} castShadow>
+        <boxGeometry args={[0.35, 0.23, 0.012]} />
+        {panelMaterial}
+      </mesh>
     </group>
   );
 }
 
 export function ShooterRobotModel({ frame, width, length, running, allianceColor }: ShooterRobotModelProps) {
-  const wheelX = width / 2 - 0.017;
-  const wheelZ = length / 2 - 0.065;
-  const railX = width / 2 - 0.035;
-  const intakeActive = running && frame.intake !== "off";
-  const alliance = allianceAccent[allianceColor];
+  const scale = Math.min(width, length) / MODEL_FOOTPRINT_METERS;
+  const powers = running ? frame.motorPowers : stoppedMotorPowers;
+  const motorPower = (id: MotorId) => powers[id];
 
   return (
-    <group>
-      <mesh position={[0, -0.044, 0]} castShadow receiveShadow>
-        <boxGeometry args={[width - 0.075, 0.026, length - 0.075]} />
-        <meshStandardMaterial color="#172329" metalness={0.36} roughness={0.56} />
+    <group position={[0, -0.13 * scale, 0]} scale={scale}>
+      <mesh position={[0, 0.105, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.405, 0.035, 0.405]} />
+        <meshStandardMaterial color="#111a1f" metalness={0.34} roughness={0.56} />
       </mesh>
+
       {[-1, 1].map((side) => (
-        <mesh key={side} position={[side * railX, -0.012, 0]} castShadow>
-          <boxGeometry args={[0.046, 0.065, length - 0.035]} />
+        <mesh key={`side-${side}`} position={[side * 0.193, 0.13, 0]} castShadow>
+          <boxGeometry args={[0.035, 0.055, 0.43]} />
           <meshStandardMaterial color={aluminum} metalness={0.84} roughness={0.25} />
         </mesh>
       ))}
       {[-1, 1].map((end) => (
-        <mesh key={end} position={[0, -0.012, end * (length / 2 - 0.035)]} castShadow>
-          <boxGeometry args={[width - 0.055, 0.065, 0.046]} />
+        <mesh key={`end-${end}`} position={[0, 0.13, end * 0.198]} castShadow>
+          <boxGeometry args={[0.39, 0.055, 0.035]} />
           <meshStandardMaterial color={aluminum} metalness={0.84} roughness={0.25} />
         </mesh>
       ))}
 
-      <MecanumModule position={[-wheelX, -0.055, -wheelZ]} rollerDirection={1} power={running ? frame.leftPower : 0} accentColor={alliance.color} />
-      <MecanumModule position={[wheelX, -0.055, -wheelZ]} rollerDirection={-1} power={running ? frame.rightPower : 0} accentColor={alliance.color} />
-      <MecanumModule position={[-wheelX, -0.055, wheelZ]} rollerDirection={-1} power={running ? frame.leftPower : 0} accentColor={alliance.color} />
-      <MecanumModule position={[wheelX, -0.055, wheelZ]} rollerDirection={1} power={running ? frame.rightPower : 0} accentColor={alliance.color} />
+      <DriveWheel position={[-0.218, 0.075, -0.146]} power={motorPower("frontLeftDrive")} />
+      <DriveWheel position={[0.218, 0.075, -0.146]} power={motorPower("frontRightDrive")} />
+      <DriveWheel position={[-0.218, 0.075, 0.146]} power={motorPower("rearLeftDrive")} />
+      <DriveWheel position={[0.218, 0.075, 0.146]} power={motorPower("rearRightDrive")} />
 
-      <PoweredRoller position={[0, -0.035, -length / 2 + 0.028]} radius={0.027} active={intakeActive} accentColor={alliance.color} />
-      <PoweredRoller position={[0, 0.02, -length / 2 + 0.092]} radius={0.024} active={intakeActive} accentColor={alliance.color} />
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[side * 0.16, 0.035, -0.13]} rotation={[-0.5, 0, 0]} castShadow>
-          <boxGeometry args={[0.022, 0.035, 0.29]} />
-          <meshStandardMaterial color="#71838b" metalness={0.62} roughness={0.35} />
-        </mesh>
-      ))}
-      <mesh position={[0, 0.045, -0.12]} rotation={[-0.5, 0, 0]} castShadow>
-        <boxGeometry args={[0.27, 0.012, 0.28]} />
-        <meshStandardMaterial color="#324248" metalness={0.3} roughness={0.52} />
-      </mesh>
-
-      <mesh position={[-0.105, 0.03, 0.135]} castShadow>
-        <boxGeometry args={[0.115, 0.06, 0.12]} />
-        <meshStandardMaterial color={darkMetal} roughness={0.58} />
-      </mesh>
-      <mesh position={[-0.105, 0.064, 0.135]}>
-        <boxGeometry args={[0.085, 0.008, 0.085]} />
-        <meshStandardMaterial color={alliance.color} emissive={alliance.emissive} emissiveIntensity={0.26} />
-      </mesh>
-
-      <TurretAssembly frame={frame} running={running} accentColor={alliance.color} emissiveColor={alliance.emissive} />
-
-      <mesh position={[0, 0.072, -length * 0.24]} rotation={[-Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.034, 0.068, 3]} />
-        <meshStandardMaterial color="#efffff" emissive={alliance.color} emissiveIntensity={0.42} />
-      </mesh>
+      <IntakeAssembly power={motorPower("intake")} />
+      <ShooterTurret frame={frame} powers={powers} running={running} />
+      <SimplifiedShell allianceColor={allianceColor} />
     </group>
   );
 }
