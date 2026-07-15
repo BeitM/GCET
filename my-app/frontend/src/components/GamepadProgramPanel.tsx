@@ -4,7 +4,7 @@ import { GamepadSnapshot, isAnalogControl, isBindingActive, readGamepadControl, 
 
 type GamepadProgramPanelProps = {
   bindings: TeleopBinding[];
-  activeGamepad: GamepadSnapshot | null;
+  activeGamepads: Record<1 | 2, GamepadSnapshot | null>;
 };
 
 const CONTROL_LABELS: Record<string, string> = {
@@ -55,20 +55,20 @@ const formatValue = (binding: TeleopBinding, gamepad: GamepadSnapshot | null) =>
   return value > 0.5 ? "pressed" : "released";
 };
 
-export function GamepadProgramPanel({ bindings, activeGamepad }: GamepadProgramPanelProps) {
+export function GamepadProgramPanel({ bindings, activeGamepads }: GamepadProgramPanelProps) {
   return (
     <section className="gamepad-program-panel panel">
       <div className="panel-head">
         <div>
           <span className="kicker">DRIVER MODE</span>
           <h2>Gamepad program visualization</h2>
-          <p>FTC teleop maps gamepad1 sticks, triggers, bumpers and buttons to robot drive and mechanism actions. This panel shows each binding and whether it is currently active.</p>
+          <p>FTC teleop maps gamepad1 and gamepad2 controls to robot drive and mechanism actions. This panel shows each binding and whether it is currently active.</p>
         </div>
       </div>
 
       {bindings.length === 0 ? (
         <div className="gamepad-program-empty">
-          <p>Add `if (gamepad1...)` bindings in the code editor to define teleop controls for FTC driver mode.</p>
+          <p>Add `if (gamepad1...)` or `if (gamepad2...)` bindings in the code editor to define teleop controls for FTC driver mode.</p>
           <ul>
             <li><strong>Left stick</strong> → drive forward/back/strafe</li>
             <li><strong>Right stick</strong> → turn or arm control</li>
@@ -79,7 +79,7 @@ export function GamepadProgramPanel({ bindings, activeGamepad }: GamepadProgramP
       ) : (
         <div className="binding-grid">
           {bindings.map((binding) => {
-            const currentValue = readGamepadControl(activeGamepad, binding.control);
+            const currentValue = readGamepadControl(activeGamepads[binding.gamepad], binding.control);
             const active = isBindingActive(binding, currentValue);
             return (
               <article key={binding.id} className={`binding-card ${active ? "active" : ""}`}>
@@ -90,7 +90,7 @@ export function GamepadProgramPanel({ bindings, activeGamepad }: GamepadProgramP
                 <p className="binding-action">{ACTION_LABEL(binding.action)}</p>
                 <div className="binding-meta">
                   <span>{binding.operator ? `${binding.operator} ${binding.threshold ?? 0}` : "default"}</span>
-                  <span>{formatValue(binding, activeGamepad)}</span>
+                  <span>{formatValue(binding, activeGamepads[binding.gamepad])}</span>
                 </div>
                 <div className="binding-state">
                   <span>{active ? "ACTIVE" : "inactive"}</span>

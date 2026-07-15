@@ -24,6 +24,11 @@ export type GamepadSnapshot = {
   axes: number[];
 };
 
+export type DriverMode = "single" | "dual";
+export type DriverAssignments = { A: number | null; B: number | null };
+export type GamepadPair = Record<1 | 2, GamepadSnapshot | null>;
+export type VirtualGamepadPair = Record<1 | 2, GamepadSnapshot>;
+
 export const VIRTUAL_GAMEPAD_INDEX = -1;
 
 const BUTTON_INDEX: Record<string, number> = {
@@ -158,15 +163,58 @@ function toSnapshot(gamepad: Gamepad | null | undefined): GamepadSnapshot | null
   };
 }
 
-export function readConnectedGamepads(): Record<1 | 2, GamepadSnapshot | null> {
+export function readConnectedGamepads(): GamepadPair {
   if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return { 1: null, 2: null };
-  const gamepads = Array.from(navigator.getGamepads());
+  const gamepads = Array.from(navigator.getGamepads())
+    .filter((gamepad): gamepad is Gamepad => Boolean(gamepad?.connected))
+    .slice(0, 2);
   return { 1: toSnapshot(gamepads[0]), 2: toSnapshot(gamepads[1]) };
 }
 
 export function readConnectedGamepad(): GamepadSnapshot | null {
   const gamepads = readConnectedGamepads();
   return gamepads[1] || gamepads[2];
+}
+
+export function resolveDriverGamepads(
+  mode: DriverMode,
+  connected: GamepadPair,
+  virtualGamepads: VirtualGamepadPair,
+  assignments: DriverAssignments,
+): GamepadPair {
+  const available = ([connected[1], connected[2]] as Array<GamepadSnapshot | null>)
+    .filter((gamepad): gamepad is GamepadSnapshot => Boolean(gamepad));
+  const findAssigned = (index: number) => available.find((gamepad) => gamepad.index === index) ?? null;
+
+  if (mode === "single") {
+    const assigned = assignments.A === null ? null : findAssigned(assignments.A);
+    return {
+      1: assignments.A === null ? available[0] ?? virtualGamepads[1] : assigned ?? virtualGamepads[1],
+      2: null,
+    };
+  }
+
+  const usedIndexes = new Set<number>();
+  let gamepad1: GamepadSnapshot | null = null;
+  let gamepad2: GamepadSnapshot | null = null;
+
+  if (assignments.A !== null) {
+    usedIndexes.add(assignments.A);
+    gamepad1 = findAssigned(assignments.A) ?? virtualGamepads[1];
+  }
+  if (assignments.B !== null) {
+    usedIndexes.add(assignments.B);
+    gamepad2 = findAssigned(assignments.B) ?? virtualGamepads[2];
+  }
+  if (assignments.A === null) {
+    gamepad1 = available.find((gamepad) => !usedIndexes.has(gamepad.index)) ?? virtualGamepads[1];
+    if (gamepad1.index >= 0) usedIndexes.add(gamepad1.index);
+  }
+  if (assignments.B === null) {
+    gamepad2 = available.find((gamepad) => !usedIndexes.has(gamepad.index)) ?? virtualGamepads[2];
+  }
+
+  return { 1: gamepad1, 2: gamepad2 };
 }
 
 export function readGamepadControl(gamepad: GamepadSnapshot | null, control: string) {

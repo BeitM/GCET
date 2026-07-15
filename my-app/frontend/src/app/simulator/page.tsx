@@ -10,7 +10,22 @@ import { InputPanel } from "@/components/InputPanel";
 import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { VirtualGamepad } from "@/components/VirtualGamepad";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
-import { createVirtualGamepadSnapshot, GamepadSnapshot, isAnalogControl, isBindingActive, parseTeleopBindings, readConnectedGamepad, readConnectedGamepads, readGamepadControl, TeleopBinding } from "@/lib/teleop";
+import {
+  createVirtualGamepadSnapshot,
+  DriverAssignments,
+  DriverMode,
+  GamepadPair,
+  GamepadSnapshot,
+  isAnalogControl,
+  isBindingActive,
+  parseTeleopBindings,
+  readConnectedGamepads,
+  readGamepadControl,
+  resolveDriverGamepads,
+  TeleopBinding,
+  VIRTUAL_GAMEPAD_INDEX,
+  VirtualGamepadPair,
+} from "@/lib/teleop";
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -330,9 +345,31 @@ type TeleopRuntime = {
   collectCooldown: number;
 };
 
+const numberArraysMatch = (left: number[], right: number[]) => (
+  left.length === right.length && left.every((value, index) => Math.abs(value - right[index]) < 0.001)
+);
+
+const booleanArraysMatch = (left: boolean[], right: boolean[]) => (
+  left.length === right.length && left.every((value, index) => value === right[index])
+);
+
+const gamepadSnapshotsMatch = (left: GamepadSnapshot | null, right: GamepadSnapshot | null) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.index === right.index
+    && left.id === right.id
+    && booleanArraysMatch(left.buttons, right.buttons)
+    && numberArraysMatch(left.buttonValues, right.buttonValues)
+    && numberArraysMatch(left.axes, right.axes);
+};
+
+const gamepadPairsMatch = (left: GamepadPair, right: GamepadPair) => (
+  gamepadSnapshotsMatch(left[1], right[1]) && gamepadSnapshotsMatch(left[2], right[2])
+);
+
 function stepTeleopFrame(
   previous: TelemetryFrame,
-  gamepads: Record<1 | 2, GamepadSnapshot | null>,
+  gamepads: GamepadPair,
   bindings: TeleopBinding[],
   artifacts: SimArtifact[],
   robotWidth: number,
@@ -699,8 +736,13 @@ export default function SimulatorDashboard() {
   const [teleopActive, setTeleopActive] = useState(false);
   const [teleopFrame, setTeleopFrame] = useState<TelemetryFrame>(() => ({ ...baseFrame, ...defaultStartPose, artifacts: cloneArtifactFrameState(createArtifacts(defaultArtifactRows)), event: "TELEOP ready" }));
   const [teleopTrail, setTeleopTrail] = useState<TelemetryFrame[]>([]);
-  const [gamepadInfo, setGamepadInfo] = useState<GamepadSnapshot | null>(null);
-  const [virtualGamepad, setVirtualGamepad] = useState<GamepadSnapshot>(() => createVirtualGamepadSnapshot());
+  const [driverMode, setDriverMode] = useState<DriverMode>("single");
+  const [physicalGamepads, setPhysicalGamepads] = useState<GamepadPair>({ 1: null, 2: null });
+  const [assignedGamepads, setAssignedGamepads] = useState<DriverAssignments>({ A: null, B: null });
+  const [virtualGamepads, setVirtualGamepads] = useState<VirtualGamepadPair>({
+    1: createVirtualGamepadSnapshot(),
+    2: createVirtualGamepadSnapshot(),
+  });
   const [hasRun, setHasRun] = useState(false);
   const [runId, setRunId] = useState(0);
   const [playbackId, setPlaybackId] = useState(0);
@@ -715,9 +757,17 @@ export default function SimulatorDashboard() {
   const teleopTrailRef = useRef<TelemetryFrame[]>([]);
   const teleopArtifactsRef = useRef<SimArtifact[]>([]);
   const teleopRuntimeRef = useRef<TeleopRuntime>({ previousActive: {}, shotId: 0, collectCooldown: 0 });
-  const virtualGamepadRef = useRef(virtualGamepad);
+  const driverModeRef = useRef(driverMode);
+  const assignedGamepadsRef = useRef(assignedGamepads);
+  const virtualGamepadsRef = useRef(virtualGamepads);
   const teleopBindings = useMemo(() => parseTeleopBindings(code), [code]);
-  const activeGamepadInfo = gamepadInfo || virtualGamepad;
+  const resolvedGamepads = useMemo(
+    () => resolveDriverGamepads(driverMode, physicalGamepads, virtualGamepads, assignedGamepads),
+    [assignedGamepads, driverMode, physicalGamepads, virtualGamepads],
+  );
+  const gamepad1Snapshot = resolvedGamepads[1];
+  const gamepad2Snapshot = resolvedGamepads[2];
+  const activeGamepadInfo = gamepad1Snapshot;
 
   const frame = teleopActive ? teleopFrame : frames[index] || frames[0];
   const trail = teleopActive ? teleopTrail : frames.slice(0, index + 1);
@@ -731,21 +781,23 @@ export default function SimulatorDashboard() {
   }, []);
 
   useEffect(() => {
-    virtualGamepadRef.current = virtualGamepad;
-  }, [virtualGamepad]);
+    driverModeRef.current = driverMode;
+    assignedGamepadsRef.current = assignedGamepads;
+    virtualGamepadsRef.current = virtualGamepads;
+  }, [assignedGamepads, driverMode, virtualGamepads]);
 
   useEffect(() => {
-    const refreshGamepad = () => {
-      const next = readConnectedGamepad();
-      setGamepadInfo((current) => current?.index === next?.index && current?.id === next?.id ? current : next);
+    const refreshGamepads = () => {
+      const connected = readConnectedGamepads();
+      setPhysicalGamepads((current) => gamepadPairsMatch(current, connected) ? current : connected);
     };
-    refreshGamepad();
-    window.addEventListener("gamepadconnected", refreshGamepad);
-    window.addEventListener("gamepaddisconnected", refreshGamepad);
-    const interval = window.setInterval(refreshGamepad, 500);
+    refreshGamepads();
+    window.addEventListener("gamepadconnected", refreshGamepads);
+    window.addEventListener("gamepaddisconnected", refreshGamepads);
+    const interval = window.setInterval(refreshGamepads, 50);
     return () => {
-      window.removeEventListener("gamepadconnected", refreshGamepad);
-      window.removeEventListener("gamepaddisconnected", refreshGamepad);
+      window.removeEventListener("gamepadconnected", refreshGamepads);
+      window.removeEventListener("gamepaddisconnected", refreshGamepads);
       window.clearInterval(interval);
     };
   }, []);
@@ -759,10 +811,12 @@ export default function SimulatorDashboard() {
       previousTime = now;
       const nextFrame = stepTeleopFrame(
         teleopFrameRef.current,
-        (() => {
-          const connected = readConnectedGamepads();
-          return connected[1] || connected[2] ? connected : { ...connected, 1: virtualGamepadRef.current };
-        })(),
+        resolveDriverGamepads(
+          driverModeRef.current,
+          readConnectedGamepads(),
+          virtualGamepadsRef.current,
+          assignedGamepadsRef.current,
+        ),
         teleopBindings,
         teleopArtifactsRef.current,
         robotWidth,
@@ -779,6 +833,29 @@ export default function SimulatorDashboard() {
     animationFrame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(animationFrame);
   }, [robotLength, robotWidth, teleopActive, teleopBindings]);
+
+  const assignPhysicalGamepad = (driver: "A" | "B", gamepadIndex: number) => {
+    setAssignedGamepads((current) => {
+      const next = driver === "A"
+        ? { A: gamepadIndex, B: current.B === gamepadIndex ? null : current.B }
+        : { A: current.A === gamepadIndex ? null : current.A, B: gamepadIndex };
+      assignedGamepadsRef.current = next;
+      return next;
+    });
+  };
+
+  const changeDriverMode = (mode: DriverMode) => {
+    driverModeRef.current = mode;
+    setDriverMode(mode);
+  };
+
+  const updateVirtualGamepad = (slot: 1 | 2, update: (current: GamepadSnapshot) => GamepadSnapshot) => {
+    setVirtualGamepads((current) => {
+      const next = { ...current, [slot]: update(current[slot]) };
+      virtualGamepadsRef.current = next;
+      return next;
+    });
+  };
 
   const selectRobot = (id: RobotPresetId) => {
     const robot = robotPresets.find((item) => item.id === id)!;
@@ -1132,13 +1209,69 @@ export default function SimulatorDashboard() {
             />
             <TelemetryPanel frame={frame} events={events} progress={teleopActive ? 0 : (index / Math.max(1, frames.length - 1)) * 100} coordinateSystem={coordinateSystem} />
           </div>
-          <VirtualGamepad
-            value={virtualGamepad}
-            onChange={setVirtualGamepad}
-            physicalConnected={Boolean(gamepadInfo)}
-            teleopActive={teleopActive}
-          />
-          <GamepadProgramPanel bindings={teleopBindings} activeGamepad={activeGamepadInfo} />
+          <section className="driver-assign-panel panel">
+            <div className="driver-assign-head">
+              <div>
+                <span className="kicker">DRIVER STATION</span>
+                <strong>Controller assignment</strong>
+              </div>
+              <small>Connect up to two controllers, then assign each one to Driver A or B.</small>
+            </div>
+            <div className="driver-mode-toggle">
+              <button type="button" aria-pressed={driverMode === "single"} className={driverMode === "single" ? "selected" : ""} onClick={() => changeDriverMode("single")}>Single driver</button>
+              <button type="button" aria-pressed={driverMode === "dual"} className={driverMode === "dual" ? "selected" : ""} onClick={() => changeDriverMode("dual")}>Two drivers</button>
+            </div>
+            <div className="connected-gamepads-grid">
+              {([1, 2] as const).map((slot) => {
+                const snapshot = physicalGamepads[slot];
+                const assignedTo = snapshot && assignedGamepads.A === snapshot.index
+                  ? "A"
+                  : snapshot && assignedGamepads.B === snapshot.index ? "B" : null;
+                return (
+                  <div key={slot} className={`connected-gamepad-card ${snapshot ? "connected" : ""}`}>
+                    <strong>Physical controller {slot}</strong>
+                    <p>{snapshot ? snapshot.id : "No device connected"}</p>
+                    <small>{snapshot ? assignedTo ? `Assigned to Driver ${assignedTo}` : "Available for assignment" : "Connect a USB or Bluetooth gamepad"}</small>
+                    <div className="connected-gamepad-actions">
+                      <button type="button" disabled={!snapshot || assignedTo === "A"} onClick={() => snapshot && assignPhysicalGamepad("A", snapshot.index)}>
+                        {assignedTo === "A" ? "Assigned A" : "Set A"}
+                      </button>
+                      <button type="button" disabled={!snapshot || assignedTo === "B"} onClick={() => snapshot && assignPhysicalGamepad("B", snapshot.index)}>
+                        {assignedTo === "B" ? "Assigned B" : "Set B"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+          {driverMode === "dual" ? (
+            <div className="dual-gamepads">
+              <VirtualGamepad
+                driverLabel="Driver A"
+                virtualValue={virtualGamepads[1]}
+                onChange={(update) => updateVirtualGamepad(1, update)}
+                physicalGamepad={gamepad1Snapshot?.index === VIRTUAL_GAMEPAD_INDEX ? null : gamepad1Snapshot}
+                teleopActive={teleopActive}
+              />
+              <VirtualGamepad
+                driverLabel="Driver B"
+                virtualValue={virtualGamepads[2]}
+                onChange={(update) => updateVirtualGamepad(2, update)}
+                physicalGamepad={gamepad2Snapshot?.index === VIRTUAL_GAMEPAD_INDEX ? null : gamepad2Snapshot}
+                teleopActive={teleopActive}
+              />
+            </div>
+          ) : (
+            <VirtualGamepad
+              driverLabel="Driver A"
+              virtualValue={virtualGamepads[1]}
+              onChange={(update) => updateVirtualGamepad(1, update)}
+              physicalGamepad={gamepad1Snapshot?.index === VIRTUAL_GAMEPAD_INDEX ? null : gamepad1Snapshot}
+              teleopActive={teleopActive}
+            />
+          )}
+          <GamepadProgramPanel bindings={teleopBindings} activeGamepads={{ 1: gamepad1Snapshot, 2: gamepad2Snapshot }} />
           {(hasRun || analysis) && (
             <div id="analysis">
               <AIFeedbackPanel data={analysis} goal={goal} />
