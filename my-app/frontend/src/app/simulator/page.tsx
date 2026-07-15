@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AIFeedback, ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { AIFeedbackPanel } from "@/components/AIFeedbackPanel";
 import { FieldSimulator } from "@/components/FieldSimulator";
+import { GamepadProgramPanel } from "@/components/GamepadProgramPanel";
 import { InputPanel } from "@/components/InputPanel";
 import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { VirtualGamepad } from "@/components/VirtualGamepad";
@@ -1137,6 +1138,7 @@ export default function SimulatorDashboard() {
             physicalConnected={Boolean(gamepadInfo)}
             teleopActive={teleopActive}
           />
+          <GamepadProgramPanel bindings={teleopBindings} activeGamepad={activeGamepadInfo} />
           {(hasRun || analysis) && (
             <div id="analysis">
               <AIFeedbackPanel data={analysis} goal={goal} />

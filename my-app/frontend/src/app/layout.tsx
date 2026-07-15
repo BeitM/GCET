@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RoboLab FTC — Virtual Robotics Lab",
-  description: "AI-powered virtual simulation and debugging feedback for FTC programmers.",
+  title: "RoboLab FTC — Learn Robotics by Doing",
+  description: "Control a virtual robot, see how code becomes movement, and learn robotics at your own level—no hardware required.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -140,7 +140,7 @@ export function VirtualGamepad({ value, onChange, physicalConnected, teleopActiv
       <div className="virtual-gamepad-head">
         <div>
           <span className="virtual-gamepad-kicker">INPUT DEVICE</span>
-          <h2>Virtual Gamepad</h2>
+          <h2>Logi-style Virtual Gamepad</h2>
           <p>Mouse controls send the same gamepad1 input as a connected controller.</p>
         </div>
         <div className={`virtual-gamepad-status ${physicalConnected ? "physical" : "virtual"}`}>
