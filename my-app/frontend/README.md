@@ -30,4 +30,4 @@ Copy `.env.example` to `.env.local`. Leave `OPENAI_API_KEY=mock` for determinist
 
 ## Prototype Status
 
-The simulator runs a small autonomous command DSL or keyboard TeleOp against an interactive Three/Rapier DECODE field, records telemetry and classifier scoring, and provides deterministic mentor feedback with optional OpenAI output. It does not compile FTC SDK Java, implement complete competition physics/rules, or provide real accounts and persistence.
+The simulator runs a small autonomous command DSL or keyboard TeleOp against an interactive Three/Rapier DECODE field, records telemetry and classifier scoring, and provides deterministic mentor feedback with optional OpenAI output. Autonomous code can set all eight robot motor channels with JavaScript-style calls such as `frontLeftDrive.setPower(0.6)` and advance open-loop mecanum motion with `wait(seconds)`. It does not execute arbitrary JavaScript or compile FTC SDK Java, implement complete competition physics/rules, or provide real accounts and persistence.

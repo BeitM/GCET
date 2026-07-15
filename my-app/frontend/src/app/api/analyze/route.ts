@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AIChatMessage, AIFeedback, AnalyzeRequest, AnalyzeResponse, AnalyzeRobotSetup, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ScoreEvent, TelemetryFrame } from "@/lib/types";
+import { sanitizeMotorPowers } from "@/lib/motors";
 import { selectAnalysisFrames } from "@/lib/analysis";
 
 export const runtime = "nodejs";
@@ -153,6 +154,7 @@ function sanitizeTelemetryFrame(value: unknown): TelemetryFrame | null {
     heading: safeNumber(value.heading),
     leftPower: safeNumber(value.leftPower),
     rightPower: safeNumber(value.rightPower),
+    motorPowers: sanitizeMotorPowers(value.motorPowers),
     leftEncoder: safeNumber(value.leftEncoder),
     rightEncoder: safeNumber(value.rightEncoder),
     shooterTarget: safeNumber(value.shooterTarget),

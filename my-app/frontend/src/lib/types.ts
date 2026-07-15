@@ -1,5 +1,8 @@
+import type { RobotMotorPowers } from "@/lib/motors";
+
 export type RobotState = {
   x:number; y:number; heading:number; leftPower:number; rightPower:number;
+  motorPowers:RobotMotorPowers;
   leftEncoder:number; rightEncoder:number; shooterTarget:number; shooterRpm:number;
   feeder:boolean; armTarget:number; armPosition:number; intake:"in"|"out"|"off";
   claw:"open"|"closed"; artifactCount:number;

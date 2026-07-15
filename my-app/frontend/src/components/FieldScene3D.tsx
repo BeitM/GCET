@@ -271,7 +271,7 @@ function Robot({ frame, width, length, running, allianceColor }: { frame: Teleme
 
   return (
     <RigidBody ref={body} type="kinematicPosition" colliders={false} position={[position[0], 0.12, position[2]]} canSleep={false}>
-      <CuboidCollider args={[widthMeters / 2, 0.2, lengthMeters / 2]} position={[0, 0.08, 0]} friction={1.2} />
+      <CuboidCollider args={[widthMeters / 2, 0.075, lengthMeters / 2]} position={[0, -0.025, 0]} friction={1.2} />
       <ShooterRobotModel frame={frame} width={widthMeters} length={lengthMeters} running={running} allianceColor={allianceColor} />
     </RigidBody>
   );
