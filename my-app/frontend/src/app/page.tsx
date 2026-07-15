@@ -11,26 +11,41 @@ export default function LandingPage() {
     <main className="landing-shell">
       <nav className="landing-nav">
         <Link href="/" className="brand"><span className="brand-mark">R</span><span>RoboLab <b>FTC</b></span></Link>
-        <div className="nav-status"><span className="live-dot" /> Prototype environment</div>
-        <Link href="/simulator" className="button button-secondary">Open simulator <span>↗</span></Link>
+        <div className="nav-links"><Link href="/simulator?mode=sandbox">Sandbox</Link><Link href="/learn">Learning mode</Link></div>
+        <Link href="/simulator?mode=sandbox" className="button button-secondary">Open sandbox <span>↗</span></Link>
       </nav>
 
-      <section className="hero">
-        <div className="hero-copy">
+      <section className="choice-hero">
+        <div className="choice-hero-copy">
           <div className="eyebrow"><span>●</span> ROBOLAB FTC · VIRTUAL ROBOTICS LAB</div>
           <h1>Simulate your robot.<br /><em>Refine your code.</em></h1>
-          <p className="hero-lede">AI-powered simulation and debugging feedback for FTC programmers.</p>
-          <p className="hero-detail">Test robot programs in a virtual FTC environment, inspect live telemetry, and iterate with an AI mentor that helps explain, debug, and improve your code.</p>
-          <div className="hero-actions">
-            <Link href="/simulator" className="button button-primary">Launch simulator <span>→</span></Link>
-            <a href="#workflow" className="text-link">See how it works <span>↓</span></a>
-          </div>
+          <p>Choose an open FTC simulation workspace or a structured learning path that introduces the same tools gradually.</p>
         </div>
 
-        <div className="hero-visual hero-placeholder" aria-label="Placeholder image">Placeholder image</div>
+        <div className="mode-choice-grid" aria-label="Choose how to use RoboLab">
+          <article className="mode-choice sandbox-choice">
+            <div className="mode-choice-top"><span>OPEN WORKSPACE</span><b>01</b></div>
+            <div>
+              <h2>Sandbox</h2>
+              <p>Start with the complete simulator. Configure the field and robot, write code, run Autonomous or TeleOp, and experiment without a prescribed sequence.</p>
+            </div>
+            <ul><li>All simulator controls available</li><li>Autonomous and TeleOp</li><li>Telemetry, scoring, playback, and AI feedback</li></ul>
+            <Link href="/simulator?mode=sandbox" className="button button-primary">Open the sandbox <span>→</span></Link>
+          </article>
+
+          <article className="mode-choice learning-choice">
+            <div className="mode-choice-top"><span>GUIDED PROGRESSION</span><b>02</b></div>
+            <div>
+              <h2>Learning mode</h2>
+              <p>Begin with fewer choices and unlock more of the lab as you progress through a structured sequence of levels.</p>
+            </div>
+            <div className="learning-rail" aria-label="Learning mode progression"><span className="active">1</span><i /><span>2</span><i /><span>3</span></div>
+            <Link href="/learn" className="button learning-button">View the learning path <span>→</span></Link>
+          </article>
+        </div>
       </section>
 
-      <section id="workflow" className="workflow">
+      <section className="workflow">
         <div className="section-label">THE ROBO LAB LOOP</div>
         <div className="workflow-grid">
           {features.map((feature) => <article key={feature.number}><span>{feature.number}</span><h2>{feature.title}</h2><p>{feature.text}</p></article>)}

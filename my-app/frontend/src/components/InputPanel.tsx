@@ -70,6 +70,8 @@ const commandReferenceGroups = [
 type InputPanelProps = {
   controlMode: ControlMode;
   setControlMode: (value: ControlMode) => void;
+  learningMode: boolean;
+  experienceLevel: "beginner" | "intermediate" | "advanced";
   goal: string;
   setGoal: (value: string) => void;
   code: string;
@@ -78,6 +80,7 @@ type InputPanelProps = {
   onStop: () => void;
   running: boolean;
   onAnalyze: () => void;
+  analyzing: boolean;
   canAnalyze: boolean;
   robotId: RobotPresetId;
   onRobot: (id: RobotPresetId) => void;
@@ -164,6 +167,8 @@ function NumberDraftInput({
 export function InputPanel({
   controlMode,
   setControlMode,
+  learningMode,
+  experienceLevel,
   goal,
   setGoal,
   code,
@@ -172,6 +177,7 @@ export function InputPanel({
   onStop,
   running,
   onAnalyze,
+  analyzing,
   canAnalyze,
   robotId,
   onRobot,
@@ -295,8 +301,8 @@ export function InputPanel({
     <aside className="input-panel panel">
       <div className="panel-head input-panel-head">
         <div>
-          <h2>Simulation setup</h2>
-          <p>Configure the robot code and virtual robot.</p>
+          <h2>{learningMode && experienceLevel === "beginner" ? "Your first mission" : learningMode ? "Guided lab" : "Simulation setup"}</h2>
+          <p>{learningMode && experienceLevel === "beginner" ? "The robot is ready. Read the goal, then press Run." : learningMode ? "Follow the level guidance, then test your changes." : "Configure the robot code and virtual robot."}</p>
         </div>
       </div>
 
@@ -322,6 +328,8 @@ export function InputPanel({
         </div>
       </section>
 
+      {learningMode && experienceLevel === "beginner" && <div className="beginner-tip"><b>NEW HERE?</b><span>Code is just a list of instructions. The robot reads them from top to bottom.</span></div>}
+
       <section className="setup-section goal-section">
         <label className="form-label" htmlFor="goal">Robot goal</label>
         <textarea id="goal" className="goal-input" value={goal} onChange={(event) => setGoal(event.target.value)} />
@@ -341,7 +349,7 @@ export function InputPanel({
         </div>
       </section>
 
-      <section className="setup-section robot-configurator">
+      {(!learningMode || experienceLevel !== "beginner") && <section className="setup-section robot-configurator">
         <div className="config-title">
           <div>
             <label className="form-label">Robot preset</label>
@@ -372,9 +380,9 @@ export function InputPanel({
             <span>v</span>
           </div>
         </div>
-      </section>
+      </section>}
 
-      <section className="setup-section field-configurator">
+      {(!learningMode || experienceLevel === "advanced") && <section className="setup-section field-configurator">
         <div className="config-title">
           <div>
             <label className="form-label">Field configuration</label>
@@ -443,12 +451,18 @@ export function InputPanel({
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       <div className="input-actions">
         <button className="button run-button" onClick={onRun} disabled={running}>
           <span>{running ? "■" : "▶"}</span>
-          {running ? (controlMode === "teleop" ? "TeleOp running..." : "Simulation running...") : (controlMode === "teleop" ? "Start TeleOp" : "Run simulation")}
+          {running
+            ? (controlMode === "teleop" ? "TeleOp running..." : "Simulation running...")
+            : controlMode === "teleop"
+              ? "Start TeleOp"
+              : learningMode && experienceLevel === "beginner"
+                ? "Run my first mission"
+                : "Run simulation"}
         </button>
         {running && (
           <button className="button analyze-button" type="button" onClick={onStop}>
@@ -456,9 +470,9 @@ export function InputPanel({
             Stop simulation
           </button>
         )}
-        <button className="button analyze-button" disabled={!canAnalyze || running} onClick={onAnalyze}>
+        <button className="button analyze-button" disabled={!canAnalyze || running || analyzing} onClick={onAnalyze}>
           <span>*</span>
-          Analyze run
+          {analyzing ? "Analyzing run..." : learningMode && experienceLevel === "beginner" ? "Ask the coach what happened" : "Get AI feedback"}
         </button>
         {setupWarning && <p className="action-warning">{setupWarning}</p>}
         {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock AI feedback.</p>}
