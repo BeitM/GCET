@@ -61,14 +61,14 @@ export function GamepadProgramPanel({ bindings, activeGamepads }: GamepadProgram
       <div className="panel-head">
         <div>
           <span className="kicker">DRIVER MODE</span>
-          <h2>Gamepad program visualization</h2>
-          <p>FTC teleop maps gamepad1 and gamepad2 controls to robot drive and mechanism actions. This panel shows each binding and whether it is currently active.</p>
+          <h2>Gamepad bindings</h2>
+          <p>TeleOp maps gamepad1 controls to robot drive and mechanism actions. This panel shows each supported binding and whether it is currently active.</p>
         </div>
       </div>
 
       {bindings.length === 0 ? (
         <div className="gamepad-program-empty">
-          <p>Add `if (gamepad1...)` or `if (gamepad2...)` bindings in the code editor to define teleop controls for FTC driver mode.</p>
+          <p>Add `if (gamepad1...)` bindings in the code editor to define TeleOp controls.</p>
           <ul>
             <li><strong>Left stick</strong> → drive forward/back/strafe</li>
             <li><strong>Right stick</strong> → turn or arm control</li>

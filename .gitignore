@@ -1,9 +1,10 @@
 # Local IDE configuration
 .idea/
 
-*.md
-!README.md
-frontend-dev-3000.log
+# Personal agent/session notes; shared AGENTS.md and project documentation stay tracked.
+AGENTS.local.md
+PROJECT_CONTEXT.local.md
+frontend-dev-3000*.log
 *.pdf
 .pnpm-store/
 __pycache__/

@@ -192,7 +192,7 @@ export function VirtualGamepad({ driverLabel, virtualValue, onChange, physicalGa
               <HoldButton control="back" label="Back button" icon="≡" snapshot={displaySnapshot} onChange={onChange} disabled={isPhysical} />
               <HoldButton control="start" label="Start button" icon="▶" snapshot={displaySnapshot} onChange={onChange} disabled={isPhysical} />
             </div>
-            <div className="virtual-gamepad-hint">ENABLE TELEOP TO DRIVE</div>
+            <div className="virtual-gamepad-hint">{teleopActive ? "TELEOP INPUT ACTIVE" : "START TELEOP TO DRIVE"}</div>
           </div>
 
           <div className="virtual-gamepad-side right">

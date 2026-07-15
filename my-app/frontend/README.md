@@ -14,18 +14,6 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) or go directly to [http://localhost:3000/simulator](http://localhost:3000/simulator).
 
-## AI Feedback Setup
-
-Create a `.env.local` file in `my-app/frontend` with:
-
-```bash
-OPENAI_API_KEY=your_api_key_here
-# Optional. Defaults to gpt-4o-mini
-OPENAI_MODEL=gpt-4o-mini
-```
-
-The simulator `Get AI feedback` action sends the current goal, robot code, robot setup, and recent telemetry to `/api/analyze`, which calls the configured model and returns structured coaching feedback.
-
 ## Commands
 
 | Command | Purpose |
@@ -43,4 +31,3 @@ Copy `.env.example` to `.env.local`. Leave `OPENAI_API_KEY=mock` for determinist
 ## Prototype Status
 
 The simulator runs a small autonomous command DSL or keyboard TeleOp against an interactive Three/Rapier DECODE field, records telemetry and classifier scoring, and provides deterministic mentor feedback with optional OpenAI output. Autonomous code can set all eight robot motor channels with JavaScript-style calls such as `frontLeftDrive.setPower(0.6)` and advance open-loop mecanum motion with `wait(seconds)`. It does not execute arbitrary JavaScript or compile FTC SDK Java, implement complete competition physics/rules, or provide real accounts and persistence.
-The current simulator uses deterministic demo scenarios and local robot-code parsing. It does not yet compile FTC SDK code or run full FTC-accurate physics, but it can call a configured AI model for structured telemetry feedback.
