@@ -31,6 +31,7 @@ type FieldScene3DProps = {
   allianceColor: AllianceColor;
   coordinateSystem: CoordinateSystem;
   selectedArtifactRows: ArtifactRowId[];
+  liveArtifacts?: ArtifactPhysicsState[];
   running: boolean;
   recordingPhysics: boolean;
   shootSignal?: number;
@@ -305,15 +306,9 @@ function retireBody(body: RapierRigidBody) {
 }
 
 function ArtifactMarker({ artifact }: { artifact: ArtifactSpec }) {
-  const [x, y, z] = artifactWorldPosition(artifact, 0.067);
-  const color = artifact.color === "green" ? "#4bed4b" : "#ad36d2";
+  const [x, y, z] = artifactWorldPosition(artifact, ARTIFACT_CENTER_Y);
 
-  return (
-    <mesh position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={20}>
-      <circleGeometry args={[0.035, 24]} />
-      <meshBasicMaterial color={color} transparent opacity={0.9} depthWrite={false} />
-    </mesh>
-  );
+  return <group position={[x, y, z]} renderOrder={20}><ArtifactBallMesh color={artifact.color} /></group>;
 }
 
 function ArtifactSetupMarkers({ selectedRows }: { selectedRows: ArtifactRowId[] }) {
@@ -416,6 +411,7 @@ function DynamicArtifactsRecorder({
   initialArtifacts,
   robotWidth,
   robotLength,
+  liveArtifacts,
   frameIndex,
   resetSignal,
   onRecord,
@@ -426,15 +422,17 @@ function DynamicArtifactsRecorder({
   initialArtifacts?: ArtifactPhysicsState[];
   robotWidth: number;
   robotLength: number;
+  liveArtifacts?: ArtifactPhysicsState[];
   frameIndex: number;
   resetSignal: number;
   onRecord: (frameIndex: number, artifacts: ArtifactPhysicsState[]) => void;
   onCollect: (frameIndex: number, artifactIds: string[]) => void;
 }) {
   const selected = useMemo(() => new Set(selectedRows), [selectedRows]);
-  const artifacts = useMemo<ArtifactSeed[]>(
-    () => initialArtifacts ?? artifactSpecs.filter((artifact) => selected.has(artifact.row)),
-    [initialArtifacts, selected],
+  const liveIds = useMemo(() => liveArtifacts ? new Set(liveArtifacts.map((artifact) => artifact.id)) : null, [liveArtifacts]);
+  const artifacts = useMemo(
+    () => artifactSpecs.filter((artifact) => selected.has(artifact.row) && (!liveIds || liveIds.has(artifact.id))),
+    [liveIds, selected],
   );
   const bodies = useRef<Record<string, RapierRigidBody | null>>({});
   const returnedArtifacts = useRef<Set<string>>(new Set());
@@ -869,6 +867,7 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
               initialArtifacts={props.frame.artifacts}
               robotWidth={props.robotWidth}
               robotLength={props.robotLength}
+              liveArtifacts={props.liveArtifacts}
               frameIndex={props.frameIndex}
               resetSignal={props.ballResetSignal}
               onRecord={props.onPhysicsArtifacts}

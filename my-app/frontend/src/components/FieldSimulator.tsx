@@ -2,6 +2,7 @@ import { FieldScene3D } from "@/components/FieldScene3D";
 import { fieldSeasons } from "@/lib/seasons";
 import { AllianceColor, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { RobotPresetId } from "@/lib/robots";
+import { GamepadSnapshot, VIRTUAL_GAMEPAD_INDEX } from "@/lib/teleop";
 
 type FieldSimulatorProps = {
   frame: TelemetryFrame;
@@ -14,7 +15,11 @@ type FieldSimulatorProps = {
   allianceColor: AllianceColor;
   coordinateSystem: CoordinateSystem;
   selectedArtifactRows: ArtifactRowId[];
+  liveArtifacts?: NonNullable<TelemetryFrame["artifacts"]>;
   recordingPhysics: boolean;
+  teleopActive: boolean;
+  gamepadInfo: GamepadSnapshot | null;
+  onToggleTeleop: () => void;
   shootSignal?: number;
   ballResetSignal: number;
   showPlayback: boolean;
@@ -39,7 +44,11 @@ export function FieldSimulator({
   allianceColor,
   coordinateSystem,
   selectedArtifactRows,
+  liveArtifacts,
   recordingPhysics,
+  teleopActive,
+  gamepadInfo,
+  onToggleTeleop,
   shootSignal,
   ballResetSignal,
   showPlayback,
@@ -68,6 +77,36 @@ export function FieldSimulator({
               </span>
             ))}
           </div>
+          <div className="mode-control">
+            <span className="mode-control-label">MODE</span>
+            <div className={`mode-slider ${teleopActive ? "teleop" : "auto"}`} role="group" aria-label="Control mode">
+              <button
+                type="button"
+                className={`mode-slider-option ${!teleopActive ? "selected" : ""}`}
+                onClick={() => {
+                  if (teleopActive) onToggleTeleop();
+                }}
+                aria-pressed={!teleopActive}
+              >
+                AUTO
+              </button>
+              <button
+                type="button"
+                className={`mode-slider-option ${teleopActive ? "selected" : ""}`}
+                onClick={() => {
+                  if (!teleopActive) onToggleTeleop();
+                }}
+                aria-pressed={teleopActive}
+              >
+                TELEOP
+              </button>
+              <span className="mode-slider-thumb" aria-hidden="true" />
+            </div>
+          </div>
+          <div className={`gamepad-state ${gamepadInfo ? "connected" : ""} ${gamepadInfo?.index === VIRTUAL_GAMEPAD_INDEX ? "virtual" : ""}`} title={gamepadInfo?.id || "Connect a gamepad before enabling TELEOP"}>
+            <i />
+            {gamepadInfo?.index === VIRTUAL_GAMEPAD_INDEX ? "Virtual mouse" : gamepadInfo ? `Gamepad ${gamepadInfo.index + 1}` : "No gamepad"}
+          </div>
           <div className={`run-state ${running ? "active" : ""}`}>
             <i />
             {running ? "Running" : "Ready"}
@@ -86,6 +125,7 @@ export function FieldSimulator({
           allianceColor={allianceColor}
           coordinateSystem={coordinateSystem}
           selectedArtifactRows={selectedArtifactRows}
+          liveArtifacts={liveArtifacts}
           running={running}
           recordingPhysics={recordingPhysics}
           shootSignal={shootSignal}
