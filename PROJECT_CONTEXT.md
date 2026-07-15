@@ -44,9 +44,9 @@ my-app/frontend/
 
 ## Motor model
 
-The current robot exposes four mecanum drive motors, an intake motor, two flywheel motors, and a turret motor. Autonomous supports JavaScript-style calls such as `frontLeftDrive.setPower(0.6)` and `wait(seconds)` for open-loop motor movement. The procedural field robot animates these channels without loading the full inspection scene.
+The current robot exposes four mecanum drive motors, an intake motor, two flywheel motors, and a turret motor. Autonomous supports JavaScript-style calls such as `frontLeftDrive.setPower(0.6)` and `wait(seconds)` for open-loop motor movement. The field and inspection bench share one lightweight procedural model based on Team 25444's supplied DECODE robot references: an axle-height truss chassis, 96 mm yellow mecanum wheels, an elevated brush intake with two rising transfer shafts, and a rotating ring-gear shooter with dual flywheels, feeder, a curved servo-adjustable hood, and a visible five-inch artifact chamber.
 
-This improves visual and control fidelity but remains a simplified model rather than execution of real FTC SDK code or a full CAD dynamics simulation.
+This improves visual and control fidelity but remains a simplified model rather than execution of real FTC SDK code or a full CAD dynamics simulation. The supplied 442 MB STEP assembly is too heavy to ship as the runtime model, so the browser geometry is reconstructed from its high-resolution renders, readable assembly labels, and dimensional anchors including the 96 mm wheels and five-inch artifact.
 
 ## TeleOp gamepad behavior
 
@@ -58,7 +58,7 @@ This improves visual and control fidelity but remains a simplified model rather 
 
 ## Robot preview page
 
-`/robot-preview` is an internal inspection and tuning bench, not a second simulator. It renders a simplified CAD-informed robot in its own Three.js canvas and provides sliders for the eight motor channels plus feeder and hood servos. It is useful for checking mechanism orientation, channel naming, and animation in isolation. It does not run field physics, scoring, missions, telemetry, or AI analysis and is intentionally not linked as a primary homepage destination.
+`/robot-preview` is an internal inspection and tuning bench, not a second simulator. It renders the same simplified Team 25444-inspired robot used on the field in its own Three.js canvas and provides sliders for the eight motor channels plus feeder and hood servos. It is useful for checking mechanism orientation, channel naming, and animation in isolation. It does not run field physics, scoring, missions, telemetry, or AI analysis and is intentionally not linked as a primary homepage destination.
 
 ## Configuration and commands
 

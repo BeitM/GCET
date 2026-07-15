@@ -5,7 +5,7 @@ import styles from "./robot-preview.module.css";
 
 export const metadata: Metadata = {
   title: "DECODE Robot CAD Preview — RoboLab FTC",
-  description: "Standalone CAD-informed inspection render of FTC Team 25444's integrated DECODE robot.",
+  description: "Standalone CAD-informed inspection render based on FTC Team 25444's DECODE robot.",
 };
 
 export default function RobotPreviewPage() {
