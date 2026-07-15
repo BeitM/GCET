@@ -22,8 +22,8 @@ const motorDefinitions: MotorDefinition[] = [
   { id: "rearLeftDrive", label: "Rear-left drive", cadLabel: "Mecanum drive motor", group: "Drivetrain" },
   { id: "rearRightDrive", label: "Rear-right drive", cadLabel: "Mecanum drive motor", group: "Drivetrain" },
   { id: "intake", label: "Intake motor", cadLabel: "Front roller intake", group: "Intake" },
-  { id: "flywheelLeft", label: "Left flywheel", cadLabel: "Turret flywheel motor", group: "Shooter" },
-  { id: "flywheelRight", label: "Right flywheel", cadLabel: "Turret flywheel motor", group: "Shooter" },
+  { id: "flywheelLeft", label: "Shooter flywheel", cadLabel: "Centered flywheel motor", group: "Shooter" },
+  { id: "flywheelRight", label: "Flywheel mirror", cadLabel: "Compatibility control", group: "Shooter" },
   { id: "turret", label: "Turret gearbox", cadLabel: "Rotating shooter base", group: "Shooter" },
 ];
 
@@ -74,7 +74,7 @@ export function DecodeRobotInspection() {
   const [powers, setPowers] = useState<RobotMotorPowers>(stoppedMotorPowers);
   const [selectedMotor, setSelectedMotor] = useState<MotorId | null>("frontLeftDrive");
   const [feederPosition, setFeederPosition] = useState(0.18);
-  const [hoodPosition, setHoodPosition] = useState(0.46);
+  const [hoodAngle, setHoodAngle] = useState(45);
 
   const setMotorPower = (id: MotorId, value: number) => {
     setSelectedMotor(id);
@@ -97,7 +97,7 @@ export function DecodeRobotInspection() {
               powers={powers}
               selectedMotor={selectedMotor}
               feederPosition={feederPosition}
-              hoodPosition={hoodPosition}
+              hoodPosition={(hoodAngle - 20) / 50}
               onSelect={setSelectedMotor}
             />
           </Canvas>
@@ -110,7 +110,7 @@ export function DecodeRobotInspection() {
       <aside className={styles.controls}>
         <div className={styles.controlIntro}>
           <p className={styles.sectionKicker}>Motor bench</p>
-          <h2>8 independent powered channels</h2>
+          <h2>8 scriptable motor channels</h2>
           <p>These controls use the same eight motor channel names available to scripts in the field simulator.</p>
           <div className={styles.actionRow}>
             <button type="button" onClick={() => setPowers(demoMotors)}>Run mechanism demo</button>
@@ -156,9 +156,9 @@ export function DecodeRobotInspection() {
               <output>{Math.round(feederPosition * 100)}</output>
             </label>
             <label className={styles.servoControl}>
-              <span>Shooter hood servo</span>
-              <input type="range" min="0" max="100" value={Math.round(hoodPosition * 100)} onChange={(event) => setHoodPosition(Number(event.target.value) / 100)} />
-              <output>{Math.round(hoodPosition * 100)}</output>
+              <span>Shooter hood angle</span>
+              <input type="range" min="20" max="70" value={hoodAngle} onChange={(event) => setHoodAngle(Number(event.target.value))} />
+              <output>{hoodAngle}&deg;</output>
             </label>
           </div>
         </div>
@@ -169,8 +169,8 @@ export function DecodeRobotInspection() {
           <ul>
             <li>Compact exposed truss chassis with four yellow mecanum assemblies.</li>
             <li>Elevated brush shaft with blue pickup fingers feeding two rising transfer rollers.</li>
-            <li>Top-mounted rotating shooter with two powered flywheels.</li>
-            <li>Visible five-inch artifact chamber, curved servo-adjustable hood, feeder, and turret drive.</li>
+            <li>Top-mounted rotating shooter with one centered flywheel and motor.</li>
+              <li>Curved servo-adjustable hood, centered flywheel, feeder, and turret drive.</li>
             <li>Detailed fasteners, wiring, gears, and internal hardware omitted for browser performance.</li>
           </ul>
         </div>

@@ -159,6 +159,7 @@ function sanitizeTelemetryFrame(value: unknown): TelemetryFrame | null {
     rightEncoder: safeNumber(value.rightEncoder),
     shooterTarget: safeNumber(value.shooterTarget),
     shooterRpm: safeNumber(value.shooterRpm),
+    hoodAngle: safeNumber(value.hoodAngle, 45),
     feeder: Boolean(value.feeder),
     armTarget: safeNumber(value.armTarget),
     armPosition: safeNumber(value.armPosition),

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { CoordinateSystem, TelemetryFrame } from "@/lib/types";
 
-type TelemetryItemId = "position" | "heading" | "drivePower" | "encoders" | "progress" | "launcher" | "arm" | "intake" | "events";
+type TelemetryItemId = "position" | "heading" | "drivePower" | "encoders" | "progress" | "launcher" | "hood" | "intake" | "events";
 
 type TelemetryOption = {
   id: TelemetryItemId;
@@ -16,7 +16,7 @@ const telemetryOptions: TelemetryOption[] = [
   { id: "encoders", label: "Encoders", description: "Left and right drivetrain ticks" },
   { id: "progress", label: "Run progress", description: "Simulation completion percentage" },
   { id: "launcher", label: "Launcher", description: "Shooter RPM and target" },
-  { id: "arm", label: "Arm", description: "Arm position and target" },
+  { id: "hood", label: "Shooter hood", description: "Current launch angle" },
   { id: "intake", label: "Intake", description: "Roller direction state" },
   { id: "events", label: "Events", description: "Warnings and run markers" },
 ];
@@ -133,11 +133,10 @@ export function TelemetryPanel({ frame, events, progress, coordinateSystem }: { 
         detail: frame.shooterTarget > 0 ? `Target ${frame.shooterTarget.toLocaleString()} RPM` : "No target set",
         accent: frame.feeder && frame.shooterRpm < frame.shooterTarget * 0.95 ? "warn" : "",
       },
-      arm: {
-        label: "Arm",
-        value: frame.armTarget > 0 ? `${Math.round(frame.armPosition).toLocaleString()} ticks` : "Idle",
-        detail: frame.armTarget > 0 ? `Target ${frame.armTarget.toLocaleString()} ticks` : "No target set",
-        accent: frame.armPosition > 1400 ? "warn" : "",
+      hood: {
+        label: "Shooter hood",
+        value: `${frame.hoodAngle.toFixed(0)} deg`,
+        detail: "Recorded launch angle",
       },
       intake: {
         label: "Intake",

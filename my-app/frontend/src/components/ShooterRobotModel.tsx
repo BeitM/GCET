@@ -16,14 +16,21 @@ const MODEL_FOOTPRINT_METERS = 0.4572;
 
 export function ShooterRobotModel({ frame, width, length, running, allianceColor }: ShooterRobotModelProps) {
   const scale = Math.min(width, length) / MODEL_FOOTPRINT_METERS;
-  const powers = running ? frame.motorPowers : stoppedMotorPowers;
+  const actualFlywheelPower = Math.max(-1, Math.min(1, frame.shooterRpm / 6000));
+  const powers = running
+    ? {
+        ...frame.motorPowers,
+        flywheelLeft: actualFlywheelPower,
+        flywheelRight: -actualFlywheelPower,
+      }
+    : stoppedMotorPowers;
 
   return (
     <group position={[0, -0.12 * scale, 0]} scale={scale}>
       <DecodeRobotModel
         powers={powers}
         feederPosition={running && frame.feeder ? 1 : 0}
-        hoodPosition={0.46}
+        hoodPosition={(frame.hoodAngle - 20) / 50}
         allianceColor={allianceColor}
       />
     </group>

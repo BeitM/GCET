@@ -24,6 +24,7 @@ type TeleopRuntime = {
   rightEncoder: number;
   motorPowers: RobotMotorPowers;
   shooterTarget: number;
+  hoodAngle: number;
   artifactCount: number;
   shotId: number;
   artifacts: SimArtifact[];
@@ -141,6 +142,7 @@ const baseFrame: TelemetryFrame = {
   rightEncoder: 0,
   shooterTarget: 0,
   shooterRpm: 0,
+  hoodAngle: 45,
   feeder: false,
   armTarget: 0,
   armPosition: 0,
@@ -794,6 +796,7 @@ function generateRobotCodeFrames(
   let rightEncoder = 0;
   let shooterTarget = 0;
   let shooterRpm = 0;
+  let hoodAngle = 45;
   let intake: TelemetryFrame["intake"] = "off";
   let motorPowers: RobotMotorPowers = { ...stoppedMotorPowers };
   let artifactCount = safePreloadCount;
@@ -834,6 +837,7 @@ function generateRobotCodeFrames(
       rightEncoder,
       shooterTarget,
       shooterRpm,
+      hoodAngle,
       intake,
       motorPowers: { ...frameMotorPowers },
       leftPower: leftPowerValue,
@@ -979,9 +983,23 @@ function generateRobotCodeFrames(
     }
   };
 
-  const advanceDrive = (target: StartPose, event: string, gradualHeading: boolean, drivePowers = mecanumMotorPowers(0.48, 0, 0)) => {
+  const advanceDrive = (
+    target: StartPose,
+    event: string,
+    gradualHeading: boolean,
+    drivePowers?: Pick<RobotMotorPowers, "frontLeftDrive" | "frontRightDrive" | "rearLeftDrive" | "rearRightDrive">,
+  ) => {
     const start = { ...current };
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
+    const headingRadians = start.heading * THREE_DEGREES_TO_RADIANS;
+    const forward = { x: Math.cos(headingRadians), y: -Math.sin(headingRadians) };
+    const right = { x: Math.sin(headingRadians), y: Math.cos(headingRadians) };
+    const dx = target.x - start.x;
+    const dy = target.y - start.y;
+    const forwardPower = distance > 0 ? (dx * forward.x + dy * forward.y) / distance * 0.48 : 0;
+    const strafePower = distance > 0 ? (dx * right.x + dy * right.y) / distance * 0.48 : 0;
+    const turnPower = gradualHeading ? -Math.sign(headingDelta(start.heading, target.heading)) * 0.28 : 0;
+    const resolvedDrivePowers = drivePowers ?? mecanumMotorPowers(forwardPower, strafePower, turnPower);
     const turnTime = gradualHeading ? Math.abs(headingDelta(start.heading, target.heading)) / AUTO_TURN_DEGREES_PER_SECOND : 0;
     const totalTime = Math.max(0.23, distance / AUTO_DRIVE_SPEED_INCHES_PER_SECOND, turnTime);
     const steps = Math.max(4, Math.ceil(totalTime / SIMULATION_FRAME_SECONDS));
@@ -1001,10 +1019,10 @@ function generateRobotCodeFrames(
       const contactEvent = collectIntakeContact();
       const frameMotorPowers = {
         ...motorPowers,
-        frontLeftDrive: drivePowers.frontLeftDrive,
-        frontRightDrive: drivePowers.frontRightDrive,
-        rearLeftDrive: drivePowers.rearLeftDrive,
-        rearRightDrive: drivePowers.rearRightDrive,
+        frontLeftDrive: resolvedDrivePowers.frontLeftDrive,
+        frontRightDrive: resolvedDrivePowers.frontRightDrive,
+        rearLeftDrive: resolvedDrivePowers.rearLeftDrive,
+        rearRightDrive: resolvedDrivePowers.rearRightDrive,
       };
       pushFrame({
         motorPowers: frameMotorPowers,
@@ -1149,6 +1167,9 @@ function generateRobotCodeFrames(
     }
 
     if (command.type === "shoot") {
+      hoodAngle = command.angle;
+      advanceWait(0.18, `set hood ${command.angle.toFixed(0)} deg`);
+
       if (artifactCount <= 0) {
         time += 0.1;
         stepArtifactPhysics(artifacts, current, current, robotWidth, robotLength, 0.1);
@@ -1770,6 +1791,7 @@ export default function SimulatorDashboard() {
     rightEncoder: runtime.rightEncoder,
     shooterTarget: runtime.shooterTarget,
     shooterRpm: runtime.shooterTarget,
+    hoodAngle: runtime.hoodAngle,
     motorPowers: { ...runtime.motorPowers },
     leftPower: sidePowersFromMotors(runtime.motorPowers).leftPower,
     rightPower: sidePowersFromMotors(runtime.motorPowers).rightPower,
@@ -1837,6 +1859,7 @@ export default function SimulatorDashboard() {
     let event = runtime.time <= SIMULATION_FRAME_SECONDS ? "TeleOp started" : "";
     let warning = "";
     if (gamepadInput.shootAngle !== null) {
+      runtime.hoodAngle = gamepadInput.shootAngle;
       if (runtime.artifactCount <= 0) {
         event = "TeleOp shot blocked";
         warning = "No artifact loaded to shoot";
@@ -1864,6 +1887,8 @@ export default function SimulatorDashboard() {
   const fireTeleopShot = () => {
     const runtime = teleopRuntime.current;
     if (!runtime) return;
+
+    runtime.hoodAngle = TELEOP_SHOT_ANGLE;
 
     if (runtime.artifactCount <= 0) {
       appendTeleopFrame(teleopFrame(runtime, runtime.pose, {
@@ -1896,6 +1921,7 @@ export default function SimulatorDashboard() {
       artifactCount: safePreloadCount,
       shooterTarget: initialShooterTarget,
       shooterRpm: initialShooterTarget,
+      hoodAngle: TELEOP_SHOT_ANGLE,
       motorPowers: {
         ...stoppedMotorPowers,
         flywheelLeft: initialShooterTarget / FLYWHEEL_MAX_RPM,
@@ -1918,6 +1944,7 @@ export default function SimulatorDashboard() {
         flywheelRight: -initialShooterTarget / FLYWHEEL_MAX_RPM,
       },
       shooterTarget: initialShooterTarget,
+      hoodAngle: TELEOP_SHOT_ANGLE,
       artifactCount: safePreloadCount,
       shotId: 0,
       artifacts,

@@ -3,6 +3,7 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
+import type { RefObject } from "react";
 import * as THREE from "three";
 import type { AllianceColor } from "@/lib/types";
 import type { MotorId, RobotMotorPowers } from "@/lib/motors";
@@ -22,7 +23,6 @@ const motorGold = "#d7a22e";
 const wheelGold = "#d6a800";
 const intakeBlue = "#3b8ed0";
 const shooterBlue = "#272c78";
-const shooterPurple = "#721ac5";
 const feederRed = "#c9362a";
 const mecanumWheelRadius = 0.048;
 
@@ -63,7 +63,7 @@ function MotorCan({
   );
 }
 
-function MecanumRollers({ side }: { side: number }) {
+function MecanumRollers({ handedness }: { handedness: number }) {
   const rollers = useRef<THREE.InstancedMesh>(null);
 
   useLayoutEffect(() => {
@@ -75,18 +75,18 @@ function MecanumRollers({ side }: { side: number }) {
     for (let index = 0; index < 9; index += 1) {
       const angle = index / 9 * Math.PI * 2;
       transform.position.set(0, Math.sin(angle) * (mecanumWheelRadius - 0.0075), Math.cos(angle) * (mecanumWheelRadius - 0.0075));
-      direction.set(side * 0.72, Math.cos(angle) * 0.69, -Math.sin(angle) * 0.69).normalize();
+      direction.set(handedness * 0.72, Math.cos(angle) * 0.69, -Math.sin(angle) * 0.69).normalize();
       transform.quaternion.setFromUnitVectors(up, direction);
       transform.updateMatrix();
       rollers.current.setMatrixAt(index, transform.matrix);
     }
     rollers.current.instanceMatrix.needsUpdate = true;
-  }, [side]);
+  }, [handedness]);
 
   return (
     <instancedMesh ref={rollers} args={[undefined, undefined, 9]} castShadow>
-      <cylinderGeometry args={[0.0075, 0.0075, 0.054, 8]} />
-      <meshStandardMaterial color="#111617" roughness={0.92} />
+      <cylinderGeometry args={[0.0075, 0.0075, 0.068, 8]} />
+      <meshStandardMaterial color="#30383b" metalness={0.08} roughness={0.88} />
     </instancedMesh>
   );
 }
@@ -106,16 +106,19 @@ function MecanumWheel({
 }) {
   const wheel = useRef<THREE.Group>(null);
   const side = Math.sign(position[0]);
+  const rollerHandedness = id === "frontLeftDrive" || id === "rearRightDrive" ? 1 : -1;
 
   useFrame((_, delta) => {
-    if (wheel.current) wheel.current.rotation.x += power * delta * 11;
+    // Positive drive power moves the robot toward its front (-Z), so the
+    // wheel surface at the floor must travel toward +Z.
+    if (wheel.current) wheel.current.rotation.x -= power * delta * 11;
   });
 
   return (
     <group onPointerDown={(event) => selectMotor(event, id, onSelect)}>
       <group ref={wheel} position={position}>
         <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.039, 0.039, 0.042, 24]} />
+          <cylinderGeometry args={[0.032, 0.032, 0.038, 24]} />
           <meshStandardMaterial
             color={wheelGold}
             emissive={selected ? "#174d4b" : "#000000"}
@@ -130,11 +133,11 @@ function MecanumWheel({
         </mesh>
         {[-1, 1].map((face) => (
           <mesh key={face} position={[face * 0.022, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-            <torusGeometry args={[0.037, 0.0035, 7, 24]} />
+            <torusGeometry args={[0.034, 0.0035, 7, 24]} />
             <meshStandardMaterial color={wheelGold} metalness={0.38} roughness={0.48} />
           </mesh>
         ))}
-        <MecanumRollers side={side} />
+        <MecanumRollers handedness={rollerHandedness} />
       </group>
       <MotorCan position={[position[0] - side * 0.068, position[1], position[2]]} selected={selected} />
     </group>
@@ -159,6 +162,15 @@ function FrameBar({
   return (
     <mesh position={[x, y, z]} rotation={[angle, 0, 0]} castShadow>
       <boxGeometry args={[thickness, length, thickness]} />
+      <meshStandardMaterial color={aluminum} metalness={0.78} roughness={0.29} />
+    </mesh>
+  );
+}
+
+function RearCrossBrace({ angle }: { angle: number }) {
+  return (
+    <mesh position={[0, 0.19, 0.211]} rotation={[0, 0, angle]} castShadow>
+      <boxGeometry args={[0.016, 0.472, 0.016]} />
       <meshStandardMaterial color={aluminum} metalness={0.78} roughness={0.29} />
     </mesh>
   );
@@ -195,8 +207,8 @@ function TrussChassis({ allianceColor }: { allianceColor: AllianceColor }) {
           <FrameBar x={side * 0.205} y={0.122} z={-0.105} length={0.21} angle={0.92} />
           <FrameBar x={side * 0.205} y={0.122} z={0.105} length={0.21} angle={-0.92} />
 
-          <mesh position={[side * 0.212, 0.225, 0.075]} rotation={[0, side * Math.PI / 2, 0]} castShadow>
-            <boxGeometry args={[0.155, 0.055, 0.008]} />
+          <mesh position={[side * 0.212, 0.225, 0]} rotation={[0, side * Math.PI / 2, 0]} castShadow>
+            <boxGeometry args={[0.195, 0.07, 0.008]} />
             <meshStandardMaterial color={plateColor} metalness={0.18} roughness={0.55} />
           </mesh>
         </group>
@@ -214,6 +226,17 @@ function TrussChassis({ allianceColor }: { allianceColor: AllianceColor }) {
           </mesh>
         </group>
       ))}
+
+      <mesh position={[0, 0.19, 0.211]} castShadow>
+        <boxGeometry args={[0.42, 0.016, 0.016]} />
+        <meshStandardMaterial color={aluminum} metalness={0.78} roughness={0.29} />
+      </mesh>
+      <RearCrossBrace angle={0.988} />
+      <RearCrossBrace angle={-0.988} />
+      <mesh position={[0, 0.125, 0.216]} castShadow>
+        <boxGeometry args={[0.245, 0.105, 0.012]} />
+        <meshStandardMaterial color="#222a2d" metalness={0.38} roughness={0.56} />
+      </mesh>
     </group>
   );
 }
@@ -235,7 +258,9 @@ function IntakeAssembly({
 
   useFrame((_, delta) => {
     shafts.current.forEach((shaft, index) => {
-      if (shaft) shaft.rotation.x += power * delta * (13 + index * 1.5);
+      // Positive intake power carries the contact surface from the front
+      // of the robot toward the internal transfer path (+Z).
+      if (shaft) shaft.rotation.x -= power * delta * (13 + index * 1.5);
     });
   });
 
@@ -308,13 +333,11 @@ function IntakeAssembly({
 }
 
 function Flywheel({
-  id,
   position,
   power,
   selected,
   onSelect,
 }: {
-  id: "flywheelLeft" | "flywheelRight";
   position: [number, number, number];
   power: number;
   selected: boolean;
@@ -323,14 +346,16 @@ function Flywheel({
   const wheel = useRef<THREE.Group>(null);
 
   useFrame((_, delta) => {
-    if (wheel.current) wheel.current.rotation.x += power * delta * 24;
+    // The artifact contacts the rear (+Z) face of the flywheel. Negative X
+    // rotation carries that contact surface upward into the hood.
+    if (wheel.current) wheel.current.rotation.x -= power * delta * 24;
   });
 
   return (
-    <group onPointerDown={(event) => selectMotor(event, id, onSelect)}>
+    <group onPointerDown={(event) => selectMotor(event, "flywheelLeft", onSelect)}>
       <group ref={wheel} position={position}>
         <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.052, 0.052, 0.052, 28]} />
+          <cylinderGeometry args={[0.057, 0.057, 0.065, 28]} />
           <meshStandardMaterial
             color="#171b1d"
             emissive={selected ? "#44236c" : "#000000"}
@@ -342,8 +367,20 @@ function Flywheel({
           <cylinderGeometry args={[0.021, 0.021, 0.057, 18]} />
           <meshStandardMaterial color={darkAluminum} metalness={0.75} roughness={0.3} />
         </mesh>
+        {[-1, 1].map((face) => (
+          <group key={face} position={[face * 0.034, 0, 0]}>
+            <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+              <cylinderGeometry args={[0.058, 0.058, 0.004, 28]} />
+              <meshStandardMaterial color={shooterBlue} metalness={0.3} roughness={0.45} />
+            </mesh>
+            <mesh position={[face * 0.0025, 0, 0]} castShadow>
+              <boxGeometry args={[0.003, 0.012, 0.088]} />
+              <meshStandardMaterial color="#8d969a" metalness={0.52} roughness={0.38} />
+            </mesh>
+          </group>
+        ))}
       </group>
-      <MotorCan position={[position[0] + Math.sign(position[0]) * 0.066, position[1], position[2]]} selected={selected} />
+      <MotorCan position={[position[0] + 0.074, position[1], position[2]]} selected={selected} />
     </group>
   );
 }
@@ -352,11 +389,11 @@ function CurvedShooterHood() {
   const geometry = useMemo(() => {
     const profile = new THREE.Shape();
     profile.moveTo(0, 0);
-    profile.quadraticCurveTo(0.012, 0.12, 0.1, 0.17);
-    profile.quadraticCurveTo(0.16, 0.2, 0.21, 0.18);
-    profile.lineTo(0.2, 0.145);
-    profile.quadraticCurveTo(0.15, 0.16, 0.115, 0.14);
-    profile.quadraticCurveTo(0.04, 0.09, 0.025, 0.015);
+    profile.quadraticCurveTo(0.004, 0.095, 0.057, 0.15);
+    profile.quadraticCurveTo(0.088, 0.175, 0.132, 0.165);
+    profile.lineTo(0.126, 0.142);
+    profile.quadraticCurveTo(0.09, 0.15, 0.071, 0.13);
+    profile.quadraticCurveTo(0.025, 0.08, 0.022, 0.004);
     profile.closePath();
 
     const hoodGeometry = new THREE.ExtrudeGeometry(profile, {
@@ -382,9 +419,9 @@ function CurvedShooterHood() {
 function HoodSideRail({ side }: { side: number }) {
   const curve = useMemo(() => new THREE.CatmullRomCurve3([
     new THREE.Vector3(side * 0.087, 0.01, 0),
-    new THREE.Vector3(side * 0.087, 0.12, -0.04),
-    new THREE.Vector3(side * 0.087, 0.185, -0.115),
-    new THREE.Vector3(side * 0.087, 0.175, -0.205),
+    new THREE.Vector3(side * 0.087, 0.085, -0.012),
+    new THREE.Vector3(side * 0.087, 0.145, -0.057),
+    new THREE.Vector3(side * 0.087, 0.168, -0.13),
   ]), [side]);
 
   return (
@@ -395,12 +432,26 @@ function HoodSideRail({ side }: { side: number }) {
   );
 }
 
+function HoodRackTeeth({ side }: { side: number }) {
+  return Array.from({ length: 10 }, (_, index) => {
+    const progress = index / 9;
+    const y = 0.015 + progress * 0.14;
+    const z = -(0.004 + progress * progress * 0.066);
+    return (
+      <mesh key={index} position={[side * 0.081, y, z]} rotation={[-progress * 0.42, 0, 0]} castShadow>
+        <boxGeometry args={[0.013, 0.007, 0.018]} />
+        <meshStandardMaterial color="#0c0f10" metalness={0.18} roughness={0.68} />
+      </mesh>
+    );
+  });
+}
+
 function ShooterSideFrame({ side }: { side: number }) {
   const curve = useMemo(() => new THREE.CatmullRomCurve3([
     new THREE.Vector3(side * 0.114, 0.012, 0.1),
-    new THREE.Vector3(side * 0.118, 0.09, 0.085),
-    new THREE.Vector3(side * 0.112, 0.17, 0.02),
-    new THREE.Vector3(side * 0.1, 0.215, -0.075),
+    new THREE.Vector3(side * 0.118, 0.095, 0.09),
+    new THREE.Vector3(side * 0.112, 0.14, 0.045),
+    new THREE.Vector3(side * 0.102, 0.165, -0.015),
   ]), [side]);
 
   return (
@@ -408,6 +459,35 @@ function ShooterSideFrame({ side }: { side: number }) {
       <tubeGeometry args={[curve, 16, 0.008, 7, false]} />
       <meshStandardMaterial color={aluminum} metalness={0.72} roughness={0.31} />
     </mesh>
+  );
+}
+
+function HoodSupportLink({ side, hood }: { side: number; hood: RefObject<THREE.Group | null> }) {
+  const link = useRef<THREE.Group>(null);
+  const start = useMemo(() => new THREE.Vector3(side * 0.105, 0.03, -0.075), [side]);
+  const localAttachment = useMemo(() => new THREE.Vector3(side * 0.087, 0.168, -0.13), [side]);
+  const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const xAxis = useMemo(() => new THREE.Vector3(1, 0, 0), []);
+  const end = useMemo(() => new THREE.Vector3(), []);
+  const direction = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame(() => {
+    if (!link.current || !hood.current) return;
+    end.copy(localAttachment).applyAxisAngle(xAxis, hood.current.rotation.x).add(hood.current.position);
+    direction.copy(end).sub(start);
+    const length = direction.length();
+    link.current.position.copy(start).add(end).multiplyScalar(0.5);
+    link.current.quaternion.setFromUnitVectors(up, direction.normalize());
+    link.current.scale.set(1, length, 1);
+  });
+
+  return (
+    <group ref={link}>
+      <mesh castShadow>
+        <cylinderGeometry args={[0.007, 0.007, 1, 8]} />
+        <meshStandardMaterial color={aluminum} metalness={0.72} roughness={0.31} />
+      </mesh>
+    </group>
   );
 }
 
@@ -432,13 +512,32 @@ function ShooterTurret({
     if (turret.current) turret.current.rotation.y += powers.turret * delta * 1.25;
     if (feeder.current) feeder.current.rotation.x += feederPosition * delta * 13;
     if (hood.current) {
-      const target = THREE.MathUtils.lerp(-0.12, 0.18, THREE.MathUtils.clamp(hoodPosition, 0, 1));
-      hood.current.rotation.x = THREE.MathUtils.lerp(hood.current.rotation.x, target, 1 - Math.exp(-delta * 7));
+      const travel = THREE.MathUtils.clamp(hoodPosition, 0, 1);
+      const damping = 1 - Math.exp(-delta * 7);
+      const targetRotation = THREE.MathUtils.lerp(0.38, -0.16, travel);
+      const arcCenterY = 0.105;
+      const arcCenterZ = 0.02;
+      const rackOffsetY = -0.05;
+      const rackOffsetZ = 0.1;
+      const targetY = arcCenterY + rackOffsetY * Math.cos(targetRotation) - rackOffsetZ * Math.sin(targetRotation);
+      const targetZ = arcCenterZ + rackOffsetY * Math.sin(targetRotation) + rackOffsetZ * Math.cos(targetRotation);
+      hood.current.position.y = THREE.MathUtils.lerp(hood.current.position.y, targetY, damping);
+      hood.current.position.z = THREE.MathUtils.lerp(hood.current.position.z, targetZ, damping);
+      hood.current.rotation.x = THREE.MathUtils.lerp(hood.current.rotation.x, targetRotation, damping);
     }
   });
 
+  const mirroredRightFlywheelPower = -powers.flywheelRight;
+  const flywheelPower = Math.abs(powers.flywheelLeft) >= Math.abs(mirroredRightFlywheelPower)
+    ? powers.flywheelLeft
+    : mirroredRightFlywheelPower;
+  const flywheelSelected = selectedMotor === "flywheelLeft" || selectedMotor === "flywheelRight";
+
   return (
-    <group position={[0, 0.337, 0.045]}>
+    <group
+      position={[0, 0.315, 0.045]}
+      onPointerDown={(event) => selectMotor(event, "turret", onSelect)}
+    >
       <mesh castShadow>
         <cylinderGeometry args={[0.151, 0.151, 0.028, 40]} />
         <meshStandardMaterial color="#899296" metalness={0.72} roughness={0.32} />
@@ -449,40 +548,27 @@ function ShooterTurret({
       </mesh>
 
       <group ref={turret} position={[0, 0.025, 0]}>
-        <mesh position={[0, 0.105, 0.018]} castShadow>
-          <sphereGeometry args={[0.0635, 24, 16]} />
-          <meshStandardMaterial color={shooterPurple} roughness={0.48} />
-        </mesh>
-
         <Flywheel
-          id="flywheelLeft"
-          position={[-0.042, 0.112, -0.073]}
-          power={powers.flywheelLeft}
-          selected={selectedMotor === "flywheelLeft"}
-          onSelect={onSelect}
-        />
-        <Flywheel
-          id="flywheelRight"
-          position={[0.042, 0.112, -0.073]}
-          power={powers.flywheelRight}
-          selected={selectedMotor === "flywheelRight"}
+          position={[0, 0.112, -0.073]}
+          power={flywheelPower}
+          selected={flywheelSelected}
           onSelect={onSelect}
         />
 
         {[-1, 1].map((side) => (
           <group key={side}>
             <ShooterSideFrame side={side} />
-            <mesh position={[side * 0.098, 0.112, -0.073]} rotation={[0, 0, Math.PI / 2]} castShadow>
-              <cylinderGeometry args={[0.064, 0.064, 0.012, 28]} />
-              <meshStandardMaterial color={shooterBlue} metalness={0.3} roughness={0.45} />
-            </mesh>
+            <HoodSupportLink side={side} hood={hood} />
           </group>
         ))}
 
-        <group ref={hood} position={[0, 0.075, 0.115]}>
+        <group ref={hood} position={[0, 0.05, 0.103]}>
           <CurvedShooterHood />
           {[-1, 1].map((side) => (
-            <HoodSideRail key={side} side={side} />
+            <group key={side}>
+              <HoodSideRail side={side} />
+              <HoodRackTeeth side={side} />
+            </group>
           ))}
         </group>
 
@@ -505,13 +591,6 @@ function ShooterTurret({
         </group>
       </group>
 
-      <group onPointerDown={(event) => selectMotor(event, "turret", onSelect)}>
-        <MotorCan position={[0.183, 0.055, 0.015]} selected={selectedMotor === "turret"} />
-        <mesh position={[0.145, 0.055, 0.015]} rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.035, 0.035, 0.028, 24]} />
-          <meshStandardMaterial color={darkAluminum} metalness={0.76} roughness={0.28} />
-        </mesh>
-      </group>
     </group>
   );
 }
@@ -528,10 +607,10 @@ export function DecodeRobotModel({
     <group>
       <TrussChassis allianceColor={allianceColor} />
 
-      <MecanumWheel id="frontLeftDrive" position={[-0.219, 0.058, -0.145]} power={powers.frontLeftDrive} selected={selectedMotor === "frontLeftDrive"} onSelect={onSelect} />
-      <MecanumWheel id="frontRightDrive" position={[0.219, 0.058, -0.145]} power={powers.frontRightDrive} selected={selectedMotor === "frontRightDrive"} onSelect={onSelect} />
-      <MecanumWheel id="rearLeftDrive" position={[-0.219, 0.058, 0.145]} power={powers.rearLeftDrive} selected={selectedMotor === "rearLeftDrive"} onSelect={onSelect} />
-      <MecanumWheel id="rearRightDrive" position={[0.219, 0.058, 0.145]} power={powers.rearRightDrive} selected={selectedMotor === "rearRightDrive"} onSelect={onSelect} />
+      <MecanumWheel id="frontLeftDrive" position={[-0.197, 0.048, -0.145]} power={powers.frontLeftDrive} selected={selectedMotor === "frontLeftDrive"} onSelect={onSelect} />
+      <MecanumWheel id="frontRightDrive" position={[0.197, 0.048, -0.145]} power={powers.frontRightDrive} selected={selectedMotor === "frontRightDrive"} onSelect={onSelect} />
+      <MecanumWheel id="rearLeftDrive" position={[-0.197, 0.048, 0.145]} power={powers.rearLeftDrive} selected={selectedMotor === "rearLeftDrive"} onSelect={onSelect} />
+      <MecanumWheel id="rearRightDrive" position={[0.197, 0.048, 0.145]} power={powers.rearRightDrive} selected={selectedMotor === "rearRightDrive"} onSelect={onSelect} />
 
       <IntakeAssembly power={powers.intake} selected={selectedMotor === "intake"} onSelect={onSelect} />
       <ShooterTurret
