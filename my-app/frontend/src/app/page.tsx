@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 const features = [
-  { number: "01", title: "Define the goal", text: "Tell RoboLab what the robot should accomplish and provide the code you want to test." },
-  { number: "02", title: "Simulate the robot", text: "Run the program on a virtual FTC-style field while telemetry streams from each subsystem." },
-  { number: "03", title: "Learn from the data", text: "Use AI feedback to understand behavior, debug issues, and find ways to improve performance." },
+  { number: "01", title: "Define the goal", text: "Describe what the robot should accomplish and provide the code you want to test." },
+  { number: "02", title: "Run the simulation", text: "Watch the robot execute your code on the virtual field while RoboLab records its behavior." },
+  { number: "03", title: "Compare and refine", text: "RoboLab's AI compares the recorded result with your intended goal, explains any gap, and suggests ways to improve the code." },
 ];
 
 export default function LandingPage() {
@@ -45,8 +45,11 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="workflow">
-        <div className="section-label">THE ROBO LAB LOOP</div>
+      <section className="workflow hybrid-workflow">
+        <div className="section-heading">
+          <div><span className="section-number">THE ROBOLAB LOOP</span><h2>Test the code. Understand the result.</h2></div>
+          <p>Define the intended outcome, run the robot, and use RoboLab&apos;s analysis to see what matched, what did not, and what to change.</p>
+        </div>
         <div className="workflow-grid">
           {features.map((feature) => <article key={feature.number}><span>{feature.number}</span><h2>{feature.title}</h2><p>{feature.text}</p></article>)}
         </div>
