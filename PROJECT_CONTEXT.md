@@ -4,7 +4,7 @@ Snapshot: 2026-07-15. Active branch: `demo`, following repair of the Sandbox/Lea
 
 ## Product and current scope
 
-RoboLab FTC is a browser-based robotics learning prototype. A user supplies a goal and supported robot-command code, configures a DECODE field and robot, runs an Autonomous or TeleOp simulation, reviews 3D playback, scoring, and telemetry, and receives deterministic coaching with optional OpenAI output.
+RoboLab FTC is a browser-based robotics learning prototype. A user supplies a goal and supported robot-command code, configures a DECODE field and robot, runs an Autonomous or TeleOp simulation, reviews 3D playback, scoring, and telemetry, and receives deterministic coaching without a valid OpenAI key or generated coaching when one is configured.
 
 The prototype does not compile arbitrary JavaScript or FTC SDK Java and is not a complete rules-accurate simulator.
 
@@ -15,7 +15,7 @@ The prototype does not compile arbitrary JavaScript or FTC SDK Java and is not a
 3. Autonomous parses a limited command DSL, including drive/strafe, position movement, turning, flywheel, shooting, intake, waits, and eight named motor channels.
 4. TeleOp uses the same simulation, physics-recording, scoring, telemetry, and analysis path as Autonomous. It accepts keyboard controls plus `gamepad1` bindings from either the first connected browser gamepad or the on-screen virtual controller.
 5. Gamepad controls and UI appear only after TeleOp is selected. Keyboard input remains available as a fallback.
-6. Analysis receives bounded code, setup information, compact telemetry, and recent chat. It always provides deterministic feedback and optionally calls OpenAI when a non-mock server key is configured.
+6. Analysis receives bounded code, setup information, compact telemetry, and recent chat. It provides deterministic feedback only when the server key is missing, explicitly set to `mock`, or rejected as invalid. With a valid configured key, OpenAI generates the complete visible feedback structure and follow-up answers; provider failures surface as errors rather than silently falling back. The feedback header identifies the active model or local fallback source.
 
 ## Architecture and entry points
 

@@ -53,9 +53,44 @@ type GoalFailure = {
 
 type JsonRecord = Record<string, unknown>;
 
+type OpenAIResult =
+  | { kind: "success"; response: AnalyzeResponse }
+  | { kind: "fallback" }
+  | { kind: "error"; message: string };
+
 const MAX_REQUEST_BYTES = 2_000_000;
 const MAX_CHAT_MESSAGES = 8;
 const MAX_RULE_VIOLATIONS = 50;
+const openAIFeedbackResponseFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "robolab_feedback",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        headline: { type: "string", description: "A concise, run-specific outcome headline." },
+        status: { type: "string", enum: ["warning", "complete"] },
+        happened: { type: "string", description: "What the recorded run actually did, with exact measured results." },
+        cause: { type: "string", description: "Why that outcome occurred according to code and telemetry." },
+        evidence: {
+          type: "array",
+          minItems: 2,
+          maxItems: 5,
+          items: { type: "string" },
+          description: "Specific telemetry, scoring, or code evidence supporting the assessment.",
+        },
+        fix: { type: "string", description: "The most useful next action, or a clear statement that no correction is needed." },
+        optimization: { type: "string", description: "One practical improvement after the current goal is reliable." },
+        concept: { type: "string", description: "How RoboLab determined the result from the recorded run." },
+        nextTest: { type: "string", description: "A concrete follow-up run that can validate the recommendation." },
+        summaryMarkdown: { type: "string", description: "Two to four concise markdown bullets with additional AI observations." },
+      },
+      required: ["headline", "status", "happened", "cause", "evidence", "fix", "optimization", "concept", "nextTest", "summaryMarkdown"],
+    },
+  },
+};
 const ruleCodes: DecodeRuleViolation["code"][] = ["FIELD_BOUNDARY", "ROBOT_BOUNDS", "CONTROL_LIMIT", "ARTIFACT_CONTROL"];
 const artifactRows: AnalyzeRobotSetup["selectedArtifactRows"] = ["topLoading", "topLeft", "topCenter", "topRight", "bottomLeft", "bottomCenter", "bottomRight", "bottomLoading"];
 
@@ -635,6 +670,33 @@ function structuredResponse(feedback: AIFeedback, mode: AnalyzeResponse["mode"],
   };
 }
 
+function parseOpenAIFeedback(content: string, goalAchieved: boolean): AIFeedback | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+
+  const textFields = ["headline", "happened", "cause", "fix", "optimization", "concept", "nextTest", "summaryMarkdown"] as const;
+  if (textFields.some((field) => typeof parsed[field] !== "string" || !parsed[field].trim())) return null;
+  if (!Array.isArray(parsed.evidence) || parsed.evidence.length < 2 || parsed.evidence.some((item) => typeof item !== "string" || !item.trim())) return null;
+
+  return {
+    headline: safeText(parsed.headline, "AI analysis complete", 180),
+    status: goalAchieved ? "complete" : "warning",
+    happened: safeText(parsed.happened, "OpenAI analyzed the recorded run.", 1_200),
+    cause: safeText(parsed.cause, "See the generated evidence for details.", 1_200),
+    evidence: parsed.evidence.slice(0, 5).map((item) => safeText(item, "Recorded telemetry", 500)),
+    fix: safeText(parsed.fix, "Review the generated analysis.", 1_200),
+    optimization: safeText(parsed.optimization, "Repeat the run and compare telemetry.", 1_200),
+    concept: safeText(parsed.concept, "The result is based on recorded scoring and telemetry.", 1_200),
+    nextTest: safeText(parsed.nextTest, "Repeat the run and compare results.", 1_200),
+    summaryMarkdown: safeText(parsed.summaryMarkdown, "- Review the run telemetry.", 3_000),
+  };
+}
+
 function buildFollowUpContent(question: string, goal: string, summary: TelemetrySummary, goalEvaluation: GoalEvaluation) {
   const lower = question.toLowerCase();
   const hasScored = summary.score.shotsMade > 0;
@@ -680,9 +742,9 @@ function buildFollowUpContent(question: string, goal: string, summary: Telemetry
   ].join("\n");
 }
 
-async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback) {
+async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback): Promise<OpenAIResult> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key || key === "mock") return null;
+  if (!key?.trim() || key === "mock") return { kind: "fallback" };
 
   const summary = summarizeFrames(payload.frames || []);
   const goalEvaluation = evaluateGoal(payload.goal || "Improve DECODE performance.", summary);
@@ -705,8 +767,10 @@ async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback) {
               "You are the AI mentor inside RoboLab, an FTC DECODE simulator.",
               "Use the provided app context, robot code, setup, DECODE terminology, command model, and telemetry only.",
               "First decide whether the user's intended goal was met, then explain that decision in plain language.",
-              "Return actionable coaching in markdown. Be specific, concise, and avoid generic encouragement.",
-              payload.question ? "For follow-up questions, answer the question directly in 2-4 short bullets and do not restate the full telemetry summary." : "",
+              "Be specific, concise, and avoid generic encouragement or canned wording.",
+              payload.question
+                ? "Answer the follow-up question directly in 2-4 short markdown bullets and do not restate the full telemetry summary."
+                : "Generate every feedback field with run-specific wording. Cite exact score, shot, motion, RPM, timing, warning, or code evidence when available.",
               "Never count a shot as scored unless summary.score or summary.scoreEvents says it scored.",
             ].join(" "),
           },
@@ -726,18 +790,44 @@ async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback) {
             }),
           },
         ],
-        temperature: 0.2,
+        ...(payload.question ? {} : { response_format: openAIFeedbackResponseFormat }),
       }),
     });
 
-    if (!response.ok) return null;
+    if (response.status === 401) return { kind: "fallback" };
+    if (!response.ok) {
+      console.error("OpenAI analysis request failed", {
+        model,
+        status: response.status,
+        requestId: response.headers.get("x-request-id"),
+      });
+      return { kind: "error", message: `OpenAI analysis failed with status ${response.status}.` };
+    }
     const json: unknown = await response.json();
-    if (!isRecord(json) || !Array.isArray(json.choices) || !isRecord(json.choices[0]) || !isRecord(json.choices[0].message)) return null;
+    if (!isRecord(json) || !Array.isArray(json.choices) || !isRecord(json.choices[0]) || !isRecord(json.choices[0].message)) {
+      return { kind: "error", message: "OpenAI returned an unusable analysis response." };
+    }
     const content = json.choices[0].message.content;
-    if (typeof content !== "string" || !content.trim()) return null;
-    return structuredResponse(payload.question ? feedback : { ...feedback, summaryMarkdown: content }, "openai", content, model);
-  } catch {
-    return null;
+    if (typeof content !== "string" || !content.trim()) {
+      return { kind: "error", message: "OpenAI returned an empty analysis response." };
+    }
+    if (!payload.question) {
+      const generatedFeedback = parseOpenAIFeedback(content, goalEvaluation.achieved);
+      if (!generatedFeedback) {
+        return { kind: "error", message: "OpenAI returned analysis that did not match the required feedback format." };
+      }
+      return {
+        kind: "success",
+        response: structuredResponse(generatedFeedback, "openai", generatedFeedback.summaryMarkdown || generatedFeedback.happened, model),
+      };
+    }
+    return {
+      kind: "success",
+      response: structuredResponse(feedback, "openai", content, model),
+    };
+  } catch (error) {
+    console.error("OpenAI analysis request could not be completed", error);
+    return { kind: "error", message: "OpenAI analysis could not be completed." };
   }
 }
 
@@ -762,8 +852,11 @@ export async function POST(request: NextRequest) {
     ? buildFollowUpContent(payload.question, goal, summary, goalEvaluation)
     : `${feedback.happened}\n\n${feedback.summaryMarkdown}`;
 
-  const openaiResponse = await runOpenAI(payload, feedback);
-  if (openaiResponse) return NextResponse.json(openaiResponse);
+  const openaiResult = await runOpenAI(payload, feedback);
+  if (openaiResult.kind === "success") return NextResponse.json(openaiResult.response);
+  if (openaiResult.kind === "error") {
+    return NextResponse.json({ error: openaiResult.message }, { status: 502 });
+  }
 
   return NextResponse.json(structuredResponse(feedback, "mock", mockContent));
 }

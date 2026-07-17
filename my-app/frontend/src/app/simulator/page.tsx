@@ -1345,6 +1345,7 @@ export default function SimulatorDashboard() {
   const [runId, setRunId] = useState(0);
   const [playbackId, setPlaybackId] = useState(0);
   const [analysis, setAnalysis] = useState<AIFeedback | null>(null);
+  const [analysisSource, setAnalysisSource] = useState<{ mode: AnalyzeResponse["mode"]; model: string } | null>(null);
   const [chatMessages, setChatMessages] = useState<AIChatMessage[]>([]);
   const [analysisPending, setAnalysisPending] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
@@ -2047,13 +2048,26 @@ export default function SimulatorDashboard() {
           question,
         }),
       });
-      if (!response.ok) throw new Error(`Analyze failed with ${response.status}`);
+      if (!response.ok) {
+        const errorBody: unknown = await response.json().catch(() => null);
+        const errorMessage = typeof errorBody === "object" && errorBody !== null && "error" in errorBody
+          && typeof (errorBody as { error?: unknown }).error === "string"
+          ? (errorBody as { error: string }).error
+          : `Analyze failed with ${response.status}`;
+        throw new Error(errorMessage);
+      }
       const result = await response.json() as AnalyzeResponse;
-      if (!question) setAnalysis(result.feedback);
+      if (!question) {
+        setAnalysis(result.feedback);
+        setAnalysisSource({ mode: result.mode, model: result.openai.model });
+      }
       if (question) setChatMessages((current) => [...current, result.assistantMessage]);
       setTimeout(() => document.getElementById("analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
     } catch (error) {
-      if (!question) setAnalysis(analysisUnavailableFeedback);
+      if (!question) {
+        setAnalysis(analysisUnavailableFeedback);
+        setAnalysisSource(null);
+      }
       setAnalysisError(error instanceof Error ? error.message : "Analyze request failed");
     } finally {
       setAnalysisPending(false);
@@ -2223,6 +2237,7 @@ export default function SimulatorDashboard() {
                 messages={chatMessages}
                 pending={analysisPending}
                 error={analysisError}
+                source={analysis ? analysisSource : null}
                 onSend={(question) => void requestAnalysis(question)}
               />
             </div>

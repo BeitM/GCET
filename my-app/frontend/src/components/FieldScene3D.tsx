@@ -7,6 +7,7 @@ import { Suspense, type ComponentProps, useEffect, useMemo, useRef, useState } f
 import * as THREE from "three";
 import { AllianceColor, ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { ShooterRobotModel } from "@/components/ShooterRobotModel";
+import { DECODE_ROBOT_MODEL_FOOTPRINT_METERS, DECODE_ROBOT_MODEL_ROOT_Y, decodeShooterMuzzlePosition } from "@/components/DecodeRobotModel";
 import { RobotPresetId } from "@/lib/robots";
 
 const INCHES_TO_METERS = 0.0254;
@@ -521,12 +522,15 @@ function DynamicArtifactsRecorder({
   );
 }
 
-function shotLaunchState(shotFrame: TelemetryFrame, robotLength: number) {
+function shotLaunchState(shotFrame: TelemetryFrame, robotWidth: number, robotLength: number) {
   const shot = shotFrame.shot!;
   const [robotX, , robotZ] = fieldPosition(shotFrame.x, shotFrame.y);
   const headingRadians = THREE.MathUtils.degToRad(shotFrame.heading);
   const forward = new THREE.Vector3(Math.cos(headingRadians), 0, -Math.sin(headingRadians));
-  const muzzleOffset = robotLength * INCHES_TO_METERS / 2 + 0.12;
+  const modelScale = Math.min(robotWidth, robotLength) * INCHES_TO_METERS / DECODE_ROBOT_MODEL_FOOTPRINT_METERS;
+  const muzzle = decodeShooterMuzzlePosition((shotFrame.hoodAngle - 20) / 50);
+  const muzzleOffset = -muzzle.z * modelScale;
+  const muzzleHeight = 0.12 + (DECODE_ROBOT_MODEL_ROOT_Y + muzzle.y) * modelScale;
   const angleRadians = THREE.MathUtils.degToRad(shot.angle);
   const horizontalSpeed = shot.speed * Math.cos(angleRadians);
   const verticalSpeed = shot.speed * Math.sin(angleRadians);
@@ -534,7 +538,7 @@ function shotLaunchState(shotFrame: TelemetryFrame, robotLength: number) {
   return {
     position: new THREE.Vector3(
       robotX + forward.x * muzzleOffset,
-      0.34,
+      muzzleHeight,
       robotZ + forward.z * muzzleOffset,
     ),
     velocity: new THREE.Vector3(
@@ -547,15 +551,17 @@ function shotLaunchState(shotFrame: TelemetryFrame, robotLength: number) {
 
 function DynamicShotBody({
   shotFrame,
+  robotWidth,
   robotLength,
   bodyRef,
 }: {
   shotFrame: TelemetryFrame;
+  robotWidth: number;
   robotLength: number;
   bodyRef: (body: RapierRigidBody | null) => void;
 }) {
   const body = useRef<RapierRigidBody>(null);
-  const launch = useMemo(() => shotLaunchState(shotFrame, robotLength), [robotLength, shotFrame]);
+  const launch = useMemo(() => shotLaunchState(shotFrame, robotWidth, robotLength), [robotLength, robotWidth, shotFrame]);
   const initialized = useRef(false);
 
   useFrame(() => {
@@ -697,6 +703,7 @@ function DynamicShotsRecorder({
         <DynamicShotBody
           key={shotFrame.shot!.id}
           shotFrame={shotFrame}
+          robotWidth={robotWidth}
           robotLength={robotLength}
           bodyRef={(body) => {
             bodies.current[shotFrame.shot!.id] = body;

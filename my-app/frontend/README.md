@@ -26,7 +26,7 @@ Open [http://localhost:3000](http://localhost:3000) or go directly to [http://lo
 
 ## AI configuration
 
-Copy `.env.example` to `.env.local`. Leave `OPENAI_API_KEY=mock` for deterministic local feedback, or provide a server-side key and optional `OPENAI_MODEL` to enable generated analysis. Never commit `.env.local`.
+Copy `.env.example` to `.env.local`. Leave `OPENAI_API_KEY=mock` for deterministic local feedback, or provide a server-side key and optional `OPENAI_MODEL` to require generated analysis. Invalid or missing keys use the deterministic fallback; other provider failures are shown as errors. Never commit `.env.local`.
 
 ## Prototype Status
 

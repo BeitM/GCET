@@ -26,6 +26,37 @@ const shooterBlue = "#272c78";
 const feederRed = "#c9362a";
 const mecanumWheelRadius = 0.048;
 
+export const DECODE_ROBOT_MODEL_FOOTPRINT_METERS = 0.4572;
+export const DECODE_ROBOT_MODEL_ROOT_Y = -0.12;
+
+export function decodeShooterHoodTransform(hoodPosition: number) {
+  const travel = THREE.MathUtils.clamp(hoodPosition, 0, 1);
+  const rotation = THREE.MathUtils.lerp(0.38, -0.16, travel);
+  const arcCenterY = 0.105;
+  const arcCenterZ = 0.02;
+  const rackOffsetY = -0.05;
+  const rackOffsetZ = 0.1;
+
+  return {
+    rotation,
+    y: arcCenterY + rackOffsetY * Math.cos(rotation) - rackOffsetZ * Math.sin(rotation),
+    z: arcCenterZ + rackOffsetY * Math.sin(rotation) + rackOffsetZ * Math.cos(rotation),
+  };
+}
+
+export function decodeShooterMuzzlePosition(hoodPosition: number) {
+  const hood = decodeShooterHoodTransform(hoodPosition);
+  const muzzleY = 0.165;
+  const muzzleZ = -0.132;
+  const rotatedY = muzzleY * Math.cos(hood.rotation) - muzzleZ * Math.sin(hood.rotation);
+  const rotatedZ = muzzleY * Math.sin(hood.rotation) + muzzleZ * Math.cos(hood.rotation);
+
+  return {
+    y: 0.315 + 0.025 + hood.y + rotatedY,
+    z: 0.045 + hood.z + rotatedZ,
+  };
+}
+
 function selectMotor(event: ThreeEvent<PointerEvent>, id: MotorId, onSelect?: (id: MotorId) => void) {
   if (!onSelect) return;
   event.stopPropagation();
@@ -512,18 +543,11 @@ function ShooterTurret({
     if (turret.current) turret.current.rotation.y += powers.turret * delta * 1.25;
     if (feeder.current) feeder.current.rotation.x += feederPosition * delta * 13;
     if (hood.current) {
-      const travel = THREE.MathUtils.clamp(hoodPosition, 0, 1);
       const damping = 1 - Math.exp(-delta * 7);
-      const targetRotation = THREE.MathUtils.lerp(0.38, -0.16, travel);
-      const arcCenterY = 0.105;
-      const arcCenterZ = 0.02;
-      const rackOffsetY = -0.05;
-      const rackOffsetZ = 0.1;
-      const targetY = arcCenterY + rackOffsetY * Math.cos(targetRotation) - rackOffsetZ * Math.sin(targetRotation);
-      const targetZ = arcCenterZ + rackOffsetY * Math.sin(targetRotation) + rackOffsetZ * Math.cos(targetRotation);
-      hood.current.position.y = THREE.MathUtils.lerp(hood.current.position.y, targetY, damping);
-      hood.current.position.z = THREE.MathUtils.lerp(hood.current.position.z, targetZ, damping);
-      hood.current.rotation.x = THREE.MathUtils.lerp(hood.current.rotation.x, targetRotation, damping);
+      const target = decodeShooterHoodTransform(hoodPosition);
+      hood.current.position.y = THREE.MathUtils.lerp(hood.current.position.y, target.y, damping);
+      hood.current.position.z = THREE.MathUtils.lerp(hood.current.position.z, target.z, damping);
+      hood.current.rotation.x = THREE.MathUtils.lerp(hood.current.rotation.x, target.rotation, damping);
     }
   });
 

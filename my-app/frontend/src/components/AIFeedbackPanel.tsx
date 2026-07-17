@@ -7,6 +7,7 @@ type AIFeedbackPanelProps = {
   messages: AIChatMessage[];
   pending: boolean;
   error?: string;
+  source?: { mode: "mock" | "openai"; model: string } | null;
   onSend: (message: string) => void;
 };
 
@@ -45,7 +46,7 @@ function PanelShell({ children }: { children: ReactNode }) {
   return <section className="ai-panel panel">{children}</section>;
 }
 
-export function AIFeedbackPanel({ data, goal, messages, pending, error, onSend }: AIFeedbackPanelProps) {
+export function AIFeedbackPanel({ data, goal, messages, pending, error, source, onSend }: AIFeedbackPanelProps) {
   const [copied, setCopied] = useState(false);
   const [rating, setRating] = useState<"up" | "down" | null>(null);
   const [draft, setDraft] = useState("");
@@ -117,7 +118,10 @@ ${data.summaryMarkdown || ""}` : "";
           <span className="kicker">AI MENTOR</span>
           <h2>{data?.headline || "Analyzing DECODE telemetry"}</h2>
         </div>
-        <span className={`analysis-status ${data?.status || "complete"}`}>{pending ? "ANALYZING" : data?.status === "warning" ? "ACTION NEEDED" : "READY"}</span>
+        <div className="analysis-badges">
+          {source && <span className={`analysis-source ${source.mode}`}>{source.mode === "openai" ? source.model.toUpperCase() : "LOCAL FALLBACK"}</span>}
+          <span className={`analysis-status ${data?.status || "complete"}`}>{pending ? "ANALYZING" : data?.status === "warning" ? "ACTION NEEDED" : "READY"}</span>
+        </div>
       </div>
 
       {error && <div className="ai-error">{error}</div>}
