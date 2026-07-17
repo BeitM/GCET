@@ -287,7 +287,9 @@ const decodeContext = {
     "driveToPosition(x, y, heading): drive to a coordinate while gradually turning to that heading.",
     "turn(value): turn in place to an absolute heading.",
     "spinFlywheel(value): ramp the shooter flywheel to target RPM.",
-    "shoot(value): fire one stored artifact from the front of the robot at a clamped launch angle.",
+    "setHoodAngle(value): move the turret hood to a clamped 20-70 degree launch angle without firing.",
+    "shoot(): fire one stored artifact using the hood's current angle.",
+    "shoot(value): Level 1 shortcut that moves the hood to a clamped launch angle and fires one stored artifact.",
     "intakeSpinIn(): collect artifacts on front-intake contact up to 3 stored artifacts.",
     "intakeSpinOut(): release stored artifacts.",
     "wait(value): wait seconds for flywheel spin-up, object settling, or timing.",
@@ -412,7 +414,7 @@ function buildGoalFailures({
       kind: "not-enough-shots-fired",
       message: `The goal asked for ${requestedShots} ${shotWord}, but only ${summary.shotSuccessRate.attempted} fired.`,
       cause: "The routine ended before enough shoot commands ran, or the robot did not have an artifact available for each requested shot.",
-      action: `Add one shoot(angle) command for each intended shot and make sure artifact count is at least ${requestedShots} before those commands run.`,
+      action: `Add one shoot() command for each intended shot and make sure artifact count is at least ${requestedShots} before those commands run. In Levels 2-3, set the hood angle before firing.`,
       nextTest: `Run a shot-count test and confirm telemetry reports ${requestedShots}/${requestedShots} attempted shots before judging accuracy.`,
       optimization: "After the shot count is correct, tune spacing between shots so the flywheel recovers without wasting time.",
     });
@@ -458,7 +460,10 @@ function evaluateGoal(goal: string, summary: TelemetrySummary): GoalEvaluation {
   const normalizedGoal = goal.trim() || "Improve DECODE performance.";
   const lower = normalizedGoal.toLowerCase();
   const requestedShots = requestedShotCount(normalizedGoal);
-  const wantsMovement = /(?:move|drive|closer|approach|go to|driveto)/.test(lower);
+  const wantsMovement = /\b(?:drive|strafe|approach|navigate|travel|go to|driveto(?:position)?)\b/.test(lower)
+    || /\bmove(?: the)? robot\b/.test(lower)
+    || /\bmove (?:forward|back(?:ward)?|left|right|closer)\b/.test(lower)
+    || /\bmove \d+(?:\.\d+)?\s*(?:in|inch|inches)\b/.test(lower);
   const wantsPreloadShot = /preload|preloaded/.test(lower);
   const moved = summary.driveDistance > 1 || summary.robotVelocity.linearSpeedInchesPerSecond > 0;
   const attemptedEnough = requestedShots === 0 || summary.shotSuccessRate.attempted >= requestedShots;
@@ -765,7 +770,7 @@ function buildFollowUpContent(question: string, goal: string, summary: Telemetry
   if (/(code|command|what.*write|how.*write)/.test(lower)) {
     return [
       "A simple next step is to keep your current first score, then add a controlled pickup-and-shoot sequence.",
-      "Use intakeSpinIn(), drive to an artifact, wait briefly while the intake contacts it, then drive back to a shooting pose and call shoot(angle).",
+      "Use intakeSpinIn(), drive to an artifact, wait briefly while the intake contacts it, then drive back to a shooting pose, set the hood angle, and call shoot().",
       "Do not add the second shot until telemetry shows the robot actually has another artifact stored.",
     ].join("\n");
   }

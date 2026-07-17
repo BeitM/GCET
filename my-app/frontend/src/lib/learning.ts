@@ -127,19 +127,20 @@ wait(1);
         level: "intermediate",
         number: "2B",
         title: "Power, Wait, Fire",
-        focus: "Use mirrored flywheel power, a spin-up delay, and a safe shutdown.",
-        description: "Control shooter motors directly while keeping the scoring helper approachable.",
-        goal: "Score the single preload: set the left and right flywheels to 0.4 and -0.4, wait 1.5 seconds, shoot once at 60 degrees, then stop all motors.",
+        focus: "Coordinate mirrored flywheel power, turret-hood positioning, spin-up time, and a safe shutdown.",
+        description: "Control the shooter motors and hood separately before triggering the feeder.",
+        goal: "Score the single preload: set the left and right flywheels to 0.4 and -0.4, move the turret hood to 60 degrees, wait 1.5 seconds, call shoot(), then stop all motors.",
         starterCode: `leftFlywheel.setPower(0.4);
 // TODO: power the mirrored right flywheel
+// TODO: move the turret hood to 60 degrees
 wait(1.5);
-// TODO: shoot the preload
+// TODO: fire using the current hood angle
 // TODO: stop all motors`,
         startPose: { x: 72, y: 54, heading: 145 },
         preloadCount: 1,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["Set the flywheels to mirrored 0.4 and -0.4 power", "Wait 1.5 seconds before firing", "Score one preload and end with all motors stopped"],
+        successCriteria: ["Set the flywheels to mirrored 0.4 and -0.4 power", "Set the turret hood to 60 degrees and wait 1.5 seconds before firing", "Call shoot() once and end with all motors stopped"],
       },
     ],
   },
@@ -199,9 +200,9 @@ public class TimedDriveAuto extends LinearOpMode {
         level: "advanced",
         number: "3B",
         title: "Java Preload Auto",
-        focus: "Combine FTC Java structure with a complete timed shooting sequence.",
-        description: "Use start gating, mechanism power, millisecond timing, scoring, and shutdown together.",
-        goal: "Write a LinearOpMode-style autonomous that waits for start, powers the flywheels at 0.4 and -0.4, sleeps 1500 milliseconds, shoots the preload at 60 degrees, then stops all motors.",
+        focus: "Combine FTC Java structure with separate hood positioning and feeder control.",
+        description: "Use start gating, flywheel power, turret-hood positioning, millisecond timing, firing, and shutdown together.",
+        goal: "Write a LinearOpMode-style autonomous that waits for start, powers the flywheels at 0.4 and -0.4, moves the turret hood to 60 degrees, sleeps 1500 milliseconds, calls shoot(), then stops all motors.",
         starterCode: `@Autonomous(name = "Preload Auto")
 public class PreloadAuto extends LinearOpMode {
     @Override
@@ -210,8 +211,9 @@ public class PreloadAuto extends LinearOpMode {
 
         leftFlywheel.setPower(0.4);
         // TODO: power the mirrored right flywheel
+        // TODO: move the turret hood to 60 degrees
         sleep(1500);
-        // TODO: shoot the preload
+        // TODO: fire using the current hood angle
         // TODO: stop all motors
     }
 }`,
@@ -219,7 +221,7 @@ public class PreloadAuto extends LinearOpMode {
         preloadCount: 1,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["Put the sequence inside runOpMode() after waitForStart()", "Use mirrored flywheel power and sleep(1500)", "Score one preload at 60 degrees and stop all motors"],
+        successCriteria: ["Put the sequence inside runOpMode() after waitForStart()", "Use mirrored flywheel power, setHoodAngle(60), and sleep(1500)", "Call shoot() once and stop all motors"],
       },
     ],
   },

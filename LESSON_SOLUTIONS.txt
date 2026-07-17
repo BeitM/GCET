@@ -39,8 +39,9 @@ Lesson 2B - Power, Wait, Fire
 
 leftFlywheel.setPower(0.4);
 rightFlywheel.setPower(-0.4);
+setHoodAngle(60);
 wait(1.5);
-shoot(60);
+shoot();
 stopAllMotors();
 
 
@@ -75,8 +76,9 @@ public class PreloadAuto extends LinearOpMode {
 
         leftFlywheel.setPower(0.4);
         rightFlywheel.setPower(-0.4);
+        setHoodAngle(60);
         sleep(1500);
-        shoot(60);
+        shoot();
         stopAllMotors();
     }
 }

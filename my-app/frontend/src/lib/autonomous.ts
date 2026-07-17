@@ -5,7 +5,8 @@ export type RobotCommand =
   | { type: "driveTo"; x: number; y: number; heading?: number }
   | { type: "turn"; heading: number }
   | { type: "spinFlywheel"; rpm: number }
-  | { type: "shoot"; angle: number }
+  | { type: "setHoodAngle"; angle: number }
+  | { type: "shoot"; angle?: number }
   | { type: "intake"; mode: "in" | "out" | "off" }
   | { type: "setMotor"; motor: MotorId; power: number }
   | { type: "setDriveMotors"; powers: Pick<RobotMotorPowers, "frontLeftDrive" | "frontRightDrive" | "rearLeftDrive" | "rearRightDrive"> }
@@ -93,7 +94,9 @@ export function parseRobotCode(source: string): RobotCommand[] {
       if (name === "drivetoposition" && args.length >= 2) return { type: "driveTo", x: args[0], y: args[1], heading: args.length >= 3 ? args[2] : undefined } satisfies RobotCommand;
       if (name === "turn") return { type: "turn", heading: normalizeHeading(first || 0) } satisfies RobotCommand;
       if (name === "spinflywheel") return { type: "spinFlywheel", rpm: clamp(first || 0, 0, 6000) } satisfies RobotCommand;
-      if (name === "shoot") return { type: "shoot", angle: clamp(Number.isFinite(first) ? first : 45, 20, 70) } satisfies RobotCommand;
+      if (name === "sethoodangle" && Number.isFinite(first)) return { type: "setHoodAngle", angle: clamp(first, 20, 70) } satisfies RobotCommand;
+      if (name === "shoot" && Number.isFinite(first)) return { type: "shoot", angle: clamp(first, 20, 70) } satisfies RobotCommand;
+      if (name === "shoot") return { type: "shoot" } satisfies RobotCommand;
       if (name === "intakespinin") return { type: "intake", mode: "in" } satisfies RobotCommand;
       if (name === "intakespinout") return { type: "intake", mode: "out" } satisfies RobotCommand;
       if (name === "intakestopspin" || name === "intakestopspini") return { type: "intake", mode: "off" } satisfies RobotCommand;

@@ -1058,9 +1058,17 @@ function generateRobotCodeFrames(
       }
     }
 
-    if (command.type === "shoot") {
+    if (command.type === "setHoodAngle") {
       hoodAngle = command.angle;
-      advanceWait(0.18, `set hood ${command.angle.toFixed(0)} deg`);
+      advanceWait(0.18, `setHoodAngle ${command.angle.toFixed(0)} deg`);
+    }
+
+    if (command.type === "shoot") {
+      const shotAngle = command.angle ?? hoodAngle;
+      if (command.angle !== undefined) {
+        hoodAngle = command.angle;
+        advanceWait(0.18, `set hood ${command.angle.toFixed(0)} deg`);
+      }
 
       if (artifactCount <= 0) {
         time += 0.1;
@@ -1068,7 +1076,7 @@ function generateRobotCodeFrames(
         addRuleViolation("CONTROL_LIMIT", "Shoot command ran without a loaded artifact.");
         pushFrame({
           feeder: false,
-          event: `Shoot ${command.angle.toFixed(0)} deg`,
+          event: `Shoot ${shotAngle.toFixed(0)} deg`,
           warning: "No artifact loaded to shoot",
         });
         continue;
@@ -1078,7 +1086,7 @@ function generateRobotCodeFrames(
       artifactCount -= 1;
       firedArtifacts += 1;
       const shotSpeed = Math.max(0.5, shooterRpm / 3600 * 8);
-      const scored = isDecodeShotSuccessful(shotSpeed, command.angle, shooterTarget, shooterRpm);
+      const scored = isDecodeShotSuccessful(shotSpeed, shotAngle, shooterTarget, shooterRpm);
       if (scored) {
         successfulShots += 1;
         if (time <= AUTONOMOUS_PERIOD_SECONDS) autonomousScoringTotal += DECODE_ARTIFACT_SCORE_POINTS;
@@ -1086,11 +1094,11 @@ function generateRobotCodeFrames(
       }
       time += SIMULATION_FRAME_SECONDS;
       stepArtifactPhysics(artifacts, current, current, robotWidth, robotLength, SIMULATION_FRAME_SECONDS);
-      shots.push({ time, speed: shotSpeed, angle: command.angle });
+      shots.push({ time, speed: shotSpeed, angle: shotAngle });
       pushFrame({
         feeder: true,
-        event: scored ? `Shoot ${command.angle.toFixed(0)} deg; scored artifact` : `Shoot ${command.angle.toFixed(0)} deg; missed trajectory`,
-        shot: { id: shotId, speed: shotSpeed, angle: command.angle },
+        event: scored ? `Shoot ${shotAngle.toFixed(0)} deg; scored artifact` : `Shoot ${shotAngle.toFixed(0)} deg; missed trajectory`,
+        shot: { id: shotId, speed: shotSpeed, angle: shotAngle },
       });
       advanceWait(0.2);
     }
@@ -1432,7 +1440,7 @@ export default function SimulatorDashboard() {
   };
 
   const updateLearningScenario = (scenarioId: string) => {
-    applyLearningScenario(getLearningScenario(scenarioId, experienceLevel));
+    applyLearningScenario(getLearningScenario(scenarioId));
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
       document.querySelector<HTMLElement>(".input-panel")?.scrollTo({ top: 0, behavior: "smooth" });

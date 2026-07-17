@@ -48,8 +48,9 @@ const commandReferenceGroups = [
     type: "Shooter",
     commands: [
       { name: "spinFlywheel(value)", snippet: "spinFlywheel(3600)", detail: "Ramp flywheel to target RPM." },
-      { name: "shoot()", snippet: "shoot()", detail: "Shoot one loaded artifact at 45 degrees." },
-      { name: "shoot(value)", snippet: "shoot(45)", detail: "Shoot one loaded artifact at 20 to 70 degrees." },
+      { name: "setHoodAngle(value)", snippet: "setHoodAngle(60)", detail: "Move the turret hood to a 20 to 70 degree launch angle without firing." },
+      { name: "shoot()", snippet: "shoot()", detail: "Shoot one loaded artifact using the current hood angle." },
+      { name: "shoot(value)", snippet: "shoot(45)", detail: "Level 1 shortcut: move the hood to an angle and fire." },
     ],
   },
   {
@@ -215,7 +216,8 @@ export function InputPanel({
 }: InputPanelProps) {
   const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
   const activeLevel = getComplexityLevel(experienceLevel);
-  const selectedScenario = activeLevel.scenarios.find((scenario) => scenario.id === selectedScenarioId) || activeLevel.scenarios[0];
+  const allScenarios = complexityLevels.flatMap((level) => level.scenarios);
+  const selectedScenario = allScenarios.find((scenario) => scenario.id === selectedScenarioId) || activeLevel.scenarios[0];
   const [showArtifactRows, setShowArtifactRows] = useState(false);
   const [showCommandReference, setShowCommandReference] = useState(false);
   const [commandSearch, setCommandSearch] = useState("");
@@ -227,13 +229,20 @@ export function InputPanel({
     : { min: 0, max: 144, detail: "Corner origin" };
   const activeCommandGroups = useMemo(() => {
     if (experienceLevel === "beginner") {
-      return commandReferenceGroups.filter((group) => group.type === "Drive" || group.type === "Shooter" || group.type === "Intake");
+      return commandReferenceGroups
+        .filter((group) => group.type === "Drive" || group.type === "Shooter" || group.type === "Intake")
+        .map((group) => group.type === "Shooter"
+          ? { ...group, commands: group.commands.filter((command) => command.name !== "setHoodAngle(value)") }
+          : group);
     }
 
     const motorGroups = commandReferenceGroups
       .filter((group) => group.type === "Motor power" || group.type === "Shooter" || group.type === "Timing")
       .map((group) => {
-        if (group.type === "Shooter") return { ...group, commands: group.commands.filter((command) => command.name.startsWith("shoot")) };
+        if (group.type === "Shooter") return {
+          ...group,
+          commands: group.commands.filter((command) => command.name === "setHoodAngle(value)" || command.name === "shoot()"),
+        };
         if (group.type === "Timing" && experienceLevel === "advanced") {
           return {
             ...group,
@@ -394,7 +403,11 @@ export function InputPanel({
           <label className="form-label" htmlFor="learning-scenario">Scenario</label>
           <div className="select-wrap">
             <select id="learning-scenario" value={selectedScenario.id} onChange={(event) => setSelectedScenarioId(event.target.value)}>
-              {activeLevel.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.number} · {scenario.title}</option>)}
+              {complexityLevels.map((level) => (
+                <optgroup key={level.id} label={`Level ${level.number} · ${level.title}`}>
+                  {level.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.number} · {scenario.title}</option>)}
+                </optgroup>
+              ))}
             </select>
             <span>v</span>
           </div>
