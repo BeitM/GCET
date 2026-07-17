@@ -11,8 +11,10 @@ import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { VirtualGamepad } from "@/components/VirtualGamepad";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { selectAnalysisFrames } from "@/lib/analysis";
-import { clampMotorPower, driveAxesFromMotorPowers, mecanumMotorPowers, setMotorPower, sidePowersFromMotors, stoppedMotorPowers, type MotorId, type RobotMotorPowers } from "@/lib/motors";
+import { parseRobotCode } from "@/lib/autonomous";
+import { clampMotorPower, driveAxesFromMotorPowers, mecanumMotorPowers, setMotorPower, sidePowersFromMotors, stoppedMotorPowers, type RobotMotorPowers } from "@/lib/motors";
 import { createVirtualGamepadSnapshot, GamepadPair, GamepadSnapshot, isAnalogControl, isBindingActive, parseTeleopBindings, readConnectedGamepads, readGamepadControl, TeleopBinding } from "@/lib/teleop";
+import { getComplexityLevel, getLearningScenario, getLearningScenarioNavigation, normalizeExperienceLevel, type ExperienceLevel, type LearningScenario } from "@/lib/learning";
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -30,27 +32,10 @@ type TeleopRuntime = {
   artifacts: SimArtifact[];
   previousGamepadBindings: Record<string, boolean>;
 };
-type RobotCommand =
-  | { type: "drive"; direction: "forward" | "backward" | "left" | "right"; distance: number }
-  | { type: "driveTo"; x: number; y: number; heading?: number }
-  | { type: "turn"; heading: number }
-  | { type: "spinFlywheel"; rpm: number }
-  | { type: "shoot"; angle: number }
-  | { type: "intake"; mode: "in" | "out" | "off" }
-  | { type: "setMotor"; motor: MotorId; power: number }
-  | { type: "setDriveMotors"; powers: Pick<RobotMotorPowers, "frontLeftDrive" | "frontRightDrive" | "rearLeftDrive" | "rearRightDrive"> }
-  | { type: "stopMotors"; scope: "drive" | "all" }
-  | { type: "wait"; seconds: number };
-
 const defaultGoal = "Test robot code on the DECODE field.";
 const defaultCode = `driveToPosition(72, 90, 145);
 spinFlywheel(2400);
 shoot(60);`;
-const learningPathGoal = "Drive forward, move left, spin up the shooter, and launch one artifact.";
-const learningPathCode = `driveForward(24);
-driveLeft(12);
-spinFlywheel(3600);
-shoot();`;
 const defaultTeleopCode = `// TeleOp controls
 // W/S: drive forward and backward
 // A/D: strafe left and right
@@ -70,7 +55,6 @@ if (gamepad1.a) shoot(60);
 if (gamepad1.left_bumper) intakeSpinIn();
 if (gamepad1.b) intakeSpinOut();`;
 const defaultStartPose: StartPose = { x: 72, y: 72, heading: 90 };
-const learningPathStartPose: StartPose = { x: 20, y: 122, heading: 0 };
 const defaultPreloadCount = 1;
 const defaultArtifactRows: ArtifactRowId[] = ["topLoading", "topRight", "topCenter", "topLeft", "bottomLoading", "bottomRight", "bottomCenter", "bottomLeft"];
 const SIMULATION_FPS = 60;
@@ -89,11 +73,12 @@ const ARTIFACT_RESTITUTION = 0.32;
 const ARTIFACT_FRICTION_PER_SECOND = 4.2;
 const ARTIFACT_MAX_SPEED_INCHES_PER_SECOND = 96;
 const ROBOT_PUSH_MAX_SPEED_INCHES_PER_SECOND = 72;
-const AUTO_DRIVE_SPEED_INCHES_PER_SECOND = 36;
+const ROBOT_MOVEMENT_SPEED_SCALE = 0.75;
+const AUTO_DRIVE_SPEED_INCHES_PER_SECOND = 36 * ROBOT_MOVEMENT_SPEED_SCALE;
 const AUTO_TURN_DEGREES_PER_SECOND = 270;
-const TELEOP_DRIVE_SPEED_INCHES_PER_SECOND = 54;
+const TELEOP_DRIVE_SPEED_INCHES_PER_SECOND = 54 * ROBOT_MOVEMENT_SPEED_SCALE;
 const TELEOP_TURN_DEGREES_PER_SECOND = 180;
-const SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND = 54;
+const SCRIPT_DRIVE_SPEED_INCHES_PER_SECOND = 54 * ROBOT_MOVEMENT_SPEED_SCALE;
 const SCRIPT_TURN_DEGREES_PER_SECOND = 180;
 const MOTOR_ENCODER_TICKS_PER_INCH = 5.8;
 const FLYWHEEL_MAX_RPM = 6000;
@@ -101,9 +86,9 @@ const TELEOP_SHOT_RPM = 2400;
 const TELEOP_SHOT_ANGLE = 60;
 const AUTONOMOUS_PERIOD_SECONDS = 30;
 const DECODE_ARTIFACT_SCORE_POINTS = 10;
-const DECODE_SHOT_MIN_SPEED = 6.2;
+const DECODE_SHOT_MIN_SPEED = 5.2;
 const DECODE_SHOT_MIN_ANGLE = 32;
-const DECODE_SHOT_MAX_ANGLE = 58;
+const DECODE_SHOT_MAX_ANGLE = 62;
 const artifactSpecs: ArtifactSpec[] = [
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
   { id: "top-loading-green", row: "topLoading", x: 133.75, y: 138, color: "green" },
@@ -565,99 +550,6 @@ function fieldPositionFromDisplay(x: number, y: number, coordinateSystem: Coordi
     x: clamp(x, 0, 144),
     y: 144 - clamp(y, 0, 144),
   };
-}
-
-function parseArgs(raw: string) {
-  if (!raw.trim()) return [];
-  return raw.split(",").map((arg) => Number(arg.trim())).filter((value) => Number.isFinite(value));
-}
-
-const motorChannelAliases: Record<string, MotorId> = {
-  frontleftdrive: "frontLeftDrive",
-  frontleftmotor: "frontLeftDrive",
-  frontrightdrive: "frontRightDrive",
-  frontrightmotor: "frontRightDrive",
-  rearleftdrive: "rearLeftDrive",
-  rearleftmotor: "rearLeftDrive",
-  rearrightdrive: "rearRightDrive",
-  rearrightmotor: "rearRightDrive",
-  intakemotor: "intake",
-  intake: "intake",
-  leftflywheel: "flywheelLeft",
-  flywheelleft: "flywheelLeft",
-  rightflywheel: "flywheelRight",
-  flywheelright: "flywheelRight",
-  turretmotor: "turret",
-  turret: "turret",
-};
-
-const motorPowerFunctionAliases: Record<string, MotorId> = {
-  setfrontleftpower: "frontLeftDrive",
-  setfrontrightpower: "frontRightDrive",
-  setrearleftpower: "rearLeftDrive",
-  setrearrightpower: "rearRightDrive",
-  setintakepower: "intake",
-  setleftflywheelpower: "flywheelLeft",
-  setrightflywheelpower: "flywheelRight",
-  setturretpower: "turret",
-};
-
-function parseRobotCode(source: string): RobotCommand[] {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split(/[;\n]/)
-    .map((line) => line.replace(/\/\/.*$/g, "").trim())
-    .filter(Boolean)
-    .map((line) => {
-      const memberCall = line.match(/^([a-zA-Z_][\w]*)\s*\.\s*setPower\s*\((.*)\)$/i);
-      if (memberCall) {
-        const motor = motorChannelAliases[memberCall[1].toLowerCase()];
-        const power = parseArgs(memberCall[2])[0];
-        if (motor && Number.isFinite(power)) {
-          return { type: "setMotor", motor, power: clampMotorPower(power) } satisfies RobotCommand;
-        }
-        return null;
-      }
-
-      const match = line.match(/^([a-zA-Z_][\w]*)\s*\((.*)\)$/);
-      if (!match) return null;
-
-      const name = match[1].toLowerCase();
-      const args = parseArgs(match[2]);
-      const first = args[0];
-      const distance = Number.isFinite(first) ? first : 16;
-
-      if (name === "driveforward" || name === "move_forward" || name === "moveup" || name === "move_up") return { type: "drive", direction: "forward", distance } satisfies RobotCommand;
-      if (name === "driveback" || name === "drivebackward" || name === "move_backward" || name === "movedown" || name === "move_down") return { type: "drive", direction: "backward", distance } satisfies RobotCommand;
-      if (name === "driveleft" || name === "strafeleft" || name === "move_left") return { type: "drive", direction: "left", distance } satisfies RobotCommand;
-      if (name === "driveright" || name === "straferight" || name === "move_right") return { type: "drive", direction: "right", distance } satisfies RobotCommand;
-      if (name === "drivetoposition" && args.length >= 2) return { type: "driveTo", x: args[0], y: args[1], heading: args.length >= 3 ? args[2] : undefined } satisfies RobotCommand;
-      if (name === "turn") return { type: "turn", heading: normalizeHeading(first || 0) } satisfies RobotCommand;
-      if (name === "spinflywheel") return { type: "spinFlywheel", rpm: clamp(first || 0, 0, 6000) } satisfies RobotCommand;
-      if (name === "shoot") return { type: "shoot", angle: clamp(Number.isFinite(first) ? first : 45, 20, 70) } satisfies RobotCommand;
-      if (name === "intakespinin") return { type: "intake", mode: "in" } satisfies RobotCommand;
-      if (name === "intakespinout") return { type: "intake", mode: "out" } satisfies RobotCommand;
-      if (name === "intakestopspin" || name === "intakestopspini") return { type: "intake", mode: "off" } satisfies RobotCommand;
-      if (motorPowerFunctionAliases[name] && Number.isFinite(first)) {
-        return { type: "setMotor", motor: motorPowerFunctionAliases[name], power: clampMotorPower(first) } satisfies RobotCommand;
-      }
-      if (name === "setdrivemotorpowers" && args.length >= 4) {
-        return {
-          type: "setDriveMotors",
-          powers: {
-            frontLeftDrive: clampMotorPower(args[0]),
-            frontRightDrive: clampMotorPower(args[1]),
-            rearLeftDrive: clampMotorPower(args[2]),
-            rearRightDrive: clampMotorPower(args[3]),
-          },
-        } satisfies RobotCommand;
-      }
-      if (name === "stopdrivemotors") return { type: "stopMotors", scope: "drive" } satisfies RobotCommand;
-      if (name === "stopallmotors") return { type: "stopMotors", scope: "all" } satisfies RobotCommand;
-      if (name === "wait") return { type: "wait", seconds: Math.max(0, first || 0) } satisfies RobotCommand;
-      return null;
-    })
-    .filter(Boolean) as RobotCommand[];
 }
 
 function isDecodeShotSuccessful(speed: number, angle: number, targetRpm: number, actualRpm: number) {
@@ -1246,6 +1138,10 @@ function generateRobotCodeFrames(
     if (command.type === "wait") {
       advanceWait(command.seconds, `wait ${command.seconds.toFixed(1)} s`);
     }
+
+    if (command.type === "start") {
+      pushFrame({ event: "waitForStart" });
+    }
   }
 
   if (shots.length > 0) {
@@ -1323,7 +1219,8 @@ function ScorePanel({ frame }: { frame: TelemetryFrame }) {
 
 export default function SimulatorDashboard() {
   const [learningMode, setLearningMode] = useState(false);
-  const [experienceLevel, setExperienceLevel] = useState<"beginner" | "intermediate" | "advanced">("advanced");
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("beginner");
+  const [selectedScenarioId, setSelectedScenarioId] = useState("level-1-navigation");
   const [goal, setGoal] = useState(defaultGoal);
   const [controlMode, setControlModeState] = useState<ControlMode>("autonomous");
   const [autonomousCode, setAutonomousCode] = useState(defaultCode);
@@ -1408,31 +1305,34 @@ export default function SimulatorDashboard() {
     const searchParams = new URLSearchParams(window.location.search);
     const requestedMode = searchParams.get("mode");
     const requestedLevel = searchParams.get("level");
-    const validLevel = requestedLevel === "beginner" || requestedLevel === "intermediate" || requestedLevel === "advanced"
-      ? requestedLevel
-      : "beginner";
+    const requestedScenario = searchParams.get("scenario");
+    const validLevel = normalizeExperienceLevel(requestedLevel);
     const requestedLearningMode = requestedMode === "learning" || (requestedMode !== "sandbox" && requestedLevel !== null);
-    if (!requestedLearningMode) return;
 
     const updateLevel = window.setTimeout(() => {
-      setLearningMode(true);
+      const level = getComplexityLevel(validLevel);
+      setLearningMode(requestedLearningMode);
       setExperienceLevel(validLevel);
-      if (validLevel === "advanced") return;
+      if (!requestedLearningMode) {
+        if (requestedLevel !== null) {
+          setGoal(level.sandboxGoal);
+          setAutonomousCode(level.sandboxCode);
+        }
+        return;
+      }
 
-      setGoal(learningPathGoal);
-      setAutonomousCode(learningPathCode);
-      setStartX(learningPathStartPose.x);
-      setStartY(learningPathStartPose.y);
-      setStartHeading(learningPathStartPose.heading);
-      setFrames(generateRobotCodeFrames(
-        learningPathCode,
-        learningPathStartPose,
-        "corner",
-        defaultPreloadCount,
-        17,
-        17,
-        defaultArtifactRows,
-      ));
+      const scenario = getLearningScenario(requestedScenario, validLevel);
+      setSelectedScenarioId(scenario.id);
+      setGoal(scenario.goal);
+      setAutonomousCode(scenario.starterCode);
+      setControlModeState("autonomous");
+      setAllianceColor(scenario.allianceColor);
+      setCoordinateSystem(scenario.coordinateSystem);
+      setPreloadCount(scenario.preloadCount);
+      setStartX(scenario.startPose.x);
+      setStartY(scenario.startPose.y);
+      setStartHeading(scenario.startPose.heading);
+      setFrames([createSetupFrame(scenario.startPose, scenario.preloadCount, defaultArtifactRows)]);
       setIndex(0);
     }, 0);
     return () => window.clearTimeout(updateLevel);
@@ -1483,6 +1383,60 @@ export default function SimulatorDashboard() {
     teleopKeys.current.clear();
     teleopRuntime.current = null;
     setRunning(false);
+  };
+
+  const resetForCodeWorkspace = (pose: StartPose, nextPreloadCount: number) => {
+    stopPlayback();
+    setPlaybackId((id) => id + 1);
+    setFrames([createSetupFrame(pose, nextPreloadCount, selectedArtifactRows)]);
+    setIndex(0);
+    setHasRun(false);
+    setAnalysis(null);
+    setAnalysisSource(null);
+    setChatMessages([]);
+    setAnalysisError("");
+    setSetupWarning("");
+    resetLiveScore();
+  };
+
+  const applyLearningScenario = (scenario: LearningScenario) => {
+    setExperienceLevel(scenario.level);
+    setSelectedScenarioId(scenario.id);
+    setGoal(scenario.goal);
+    setAutonomousCode(scenario.starterCode);
+    setControlModeState("autonomous");
+    setAllianceColor(scenario.allianceColor);
+    setCoordinateSystem(scenario.coordinateSystem);
+    setPreloadCount(scenario.preloadCount);
+    setStartX(scenario.startPose.x);
+    setStartY(scenario.startPose.y);
+    setStartHeading(scenario.startPose.heading);
+    resetForCodeWorkspace(scenario.startPose, scenario.preloadCount);
+    const level = getComplexityLevel(scenario.level);
+    window.history.replaceState(null, "", `/simulator?mode=learning&level=${level.number}&scenario=${scenario.id}`);
+  };
+
+  const updateExperienceLevel = (levelId: ExperienceLevel) => {
+    const level = getComplexityLevel(levelId);
+    setExperienceLevel(levelId);
+    setSelectedScenarioId(level.scenarios[0].id);
+    if (learningMode) {
+      applyLearningScenario(level.scenarios[0]);
+      return;
+    }
+
+    setGoal(level.sandboxGoal);
+    setAutonomousCode(level.sandboxCode);
+    resetForCodeWorkspace({ x: startX, y: startY, heading: startHeading }, preloadCount);
+    window.history.replaceState(null, "", `/simulator?mode=sandbox&level=${level.number}`);
+  };
+
+  const updateLearningScenario = (scenarioId: string) => {
+    applyLearningScenario(getLearningScenario(scenarioId, experienceLevel));
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      document.querySelector<HTMLElement>(".input-panel")?.scrollTo({ top: 0, behavior: "smooth" });
+    });
   };
 
   const previewStartPose = (pose: StartPose) => {
@@ -2011,6 +1965,12 @@ export default function SimulatorDashboard() {
   };
 
   const requestAnalysis = useCallback(async (question?: string) => {
+    const activeLevel = getComplexityLevel(experienceLevel);
+    const selectedScenario = getLearningScenario(selectedScenarioId, experienceLevel);
+    const analysisFrames = selectAnalysisFrames(frames).map((recordedFrame) => ({
+      ...recordedFrame,
+      ...displayPositionFromField(recordedFrame, coordinateSystem),
+    }));
     const userMessage: AIChatMessage | null = question
       ? { id: `user-${Date.now()}`, role: "user", content: question, createdAt: Date.now() }
       : null;
@@ -2043,7 +2003,18 @@ export default function SimulatorDashboard() {
             preloadCount,
             selectedArtifactRows,
           },
-          frames: selectAnalysisFrames(frames),
+          learningContext: {
+            mode: learningMode ? "learning" : "sandbox",
+            level: experienceLevel,
+            levelNumber: activeLevel.number,
+            levelTitle: activeLevel.title,
+            syntaxLabel: activeLevel.syntaxLabel,
+            scenarioId: learningMode ? selectedScenario.id : undefined,
+            scenarioTitle: learningMode ? selectedScenario.title : undefined,
+            scenarioFocus: learningMode ? selectedScenario.focus : undefined,
+            successCriteria: learningMode ? selectedScenario.successCriteria : [],
+          },
+          frames: analysisFrames,
           messages: requestMessages,
           question,
         }),
@@ -2072,7 +2043,7 @@ export default function SimulatorDashboard() {
     } finally {
       setAnalysisPending(false);
     }
-  }, [allianceColor, chatMessages, code, controlMode, coordinateSystem, displayStartPosition.x, displayStartPosition.y, frames, goal, preloadCount, robotId, robotLength, robotWidth, selectedArtifactRows, startHeading]);
+  }, [allianceColor, chatMessages, code, controlMode, coordinateSystem, displayStartPosition.x, displayStartPosition.y, experienceLevel, frames, goal, learningMode, preloadCount, robotId, robotLength, robotWidth, selectedArtifactRows, selectedScenarioId, startHeading]);
 
   useEffect(() => {
     if (controlMode !== "autonomous" || !hasRun || running || frames.length <= 1 || lastAutoAnalysisRun.current === runId) return;
@@ -2134,6 +2105,9 @@ export default function SimulatorDashboard() {
   }, [controlMode, frames, index]);
 
   const shootSignal = frame.shot ? (runId + 1) * 1000000 + playbackId * 10000 + frame.shot.id : -1;
+  const activeLevel = getComplexityLevel(experienceLevel);
+  const selectedScenario = getLearningScenario(selectedScenarioId, experienceLevel);
+  const lessonNavigation = getLearningScenarioNavigation(selectedScenario.id);
 
   return (
     <main className="sim-shell">
@@ -2143,14 +2117,24 @@ export default function SimulatorDashboard() {
         <div className="sim-nav-right"><span><i className="live-dot" />SIMULATION READY</span><Link href="/">Exit lab x</Link></div>
       </header>
       {learningMode && <section className={`lab-guide ${experienceLevel}`}>
-        <div><span>{experienceLevel === "beginner" ? "LEVEL 1 · GUIDED LAB" : `${experienceLevel.toUpperCase()} · GUIDED LAB`}</span><strong>{experienceLevel === "beginner" ? "Start with a focused mission and a simplified workspace." : experienceLevel === "intermediate" ? "Practice with more configuration and room to experiment." : "Use the complete lab inside a structured challenge."}</strong></div>
+        <div><span>LEVEL {activeLevel.number} · {selectedScenario.number} GUIDED LAB</span><strong>{selectedScenario.title} · {activeLevel.syntaxLabel}</strong></div>
         <ol><li><b>1</b> Read the goal</li><li><b>2</b> Run the robot</li><li><b>3</b> Review feedback</li></ol>
-        <Link href="/learn">Change level</Link>
+        <nav className="lesson-navigation" aria-label="Lesson navigation">
+          <div className="lesson-stepper">
+            <button type="button" disabled={!lessonNavigation.previous} onClick={() => lessonNavigation.previous && updateLearningScenario(lessonNavigation.previous.id)} aria-label="Previous lesson"><span>←</span><small>Previous</small></button>
+            <b><small>LESSON</small>{lessonNavigation.index + 1}<span>/ {lessonNavigation.total}</span></b>
+            <button type="button" disabled={!lessonNavigation.next} onClick={() => lessonNavigation.next && updateLearningScenario(lessonNavigation.next.id)} aria-label="Next lesson"><small>Next</small><span>→</span></button>
+          </div>
+          <Link href="/learn">All lessons</Link>
+        </nav>
       </section>}
       <div className="sim-layout">
         <InputPanel
           learningMode={learningMode}
           experienceLevel={experienceLevel}
+          setExperienceLevel={updateExperienceLevel}
+          selectedScenarioId={selectedScenarioId}
+          setSelectedScenarioId={updateLearningScenario}
           {...{
             controlMode,
             setControlMode: updateControlMode,
@@ -2240,6 +2224,14 @@ export default function SimulatorDashboard() {
                 source={analysis ? analysisSource : null}
                 onSend={(question) => void requestAnalysis(question)}
               />
+              {learningMode && analysis?.status === "complete" && (
+                <section className="lesson-complete-navigation">
+                  <div><span>LESSON COMPLETE</span><strong>{selectedScenario.number} · {selectedScenario.title}</strong></div>
+                  {lessonNavigation.next
+                    ? <button type="button" onClick={() => updateLearningScenario(lessonNavigation.next!.id)}><span><small>CONTINUE TO</small><strong>{lessonNavigation.next.number} · {lessonNavigation.next.title}</strong></span><b>→</b></button>
+                    : <Link href="/learn"><span><small>CURRICULUM COMPLETE</small><strong>Return to all lessons</strong></span><b>→</b></Link>}
+                </section>
+              )}
             </div>
           )}
         </div>

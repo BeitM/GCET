@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
+import { complexityLevels, getComplexityLevel, type ExperienceLevel } from "@/lib/learning";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { AllianceColor, ArtifactRowId, ControlMode, CoordinateSystem } from "@/lib/types";
 
@@ -71,7 +72,10 @@ type InputPanelProps = {
   controlMode: ControlMode;
   setControlMode: (value: ControlMode) => void;
   learningMode: boolean;
-  experienceLevel: "beginner" | "intermediate" | "advanced";
+  experienceLevel: ExperienceLevel;
+  setExperienceLevel: (value: ExperienceLevel) => void;
+  selectedScenarioId: string;
+  setSelectedScenarioId: (value: string) => void;
   goal: string;
   setGoal: (value: string) => void;
   code: string;
@@ -178,6 +182,9 @@ export function InputPanel({
   setControlMode,
   learningMode,
   experienceLevel,
+  setExperienceLevel,
+  selectedScenarioId,
+  setSelectedScenarioId,
   goal,
   setGoal,
   code,
@@ -207,6 +214,8 @@ export function InputPanel({
   setupWarning,
 }: InputPanelProps) {
   const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
+  const activeLevel = getComplexityLevel(experienceLevel);
+  const selectedScenario = activeLevel.scenarios.find((scenario) => scenario.id === selectedScenarioId) || activeLevel.scenarios[0];
   const [showArtifactRows, setShowArtifactRows] = useState(false);
   const [showCommandReference, setShowCommandReference] = useState(false);
   const [commandSearch, setCommandSearch] = useState("");
@@ -216,17 +225,40 @@ export function InputPanel({
   const coordinateBounds = coordinateSystem === "center"
     ? { min: -72, max: 72, detail: "Center origin" }
     : { min: 0, max: 144, detail: "Corner origin" };
+  const activeCommandGroups = useMemo(() => {
+    if (experienceLevel === "beginner") {
+      return commandReferenceGroups.filter((group) => group.type === "Drive" || group.type === "Shooter" || group.type === "Intake");
+    }
+
+    const motorGroups = commandReferenceGroups
+      .filter((group) => group.type === "Motor power" || group.type === "Shooter" || group.type === "Timing")
+      .map((group) => {
+        if (group.type === "Shooter") return { ...group, commands: group.commands.filter((command) => command.name.startsWith("shoot")) };
+        if (group.type === "Timing" && experienceLevel === "advanced") {
+          return {
+            ...group,
+            type: "LinearOpMode timing",
+            commands: [
+              { name: "waitForStart()", snippet: "waitForStart()", detail: "Mark the FTC autonomous start point." },
+              { name: "sleep(milliseconds)", snippet: "sleep(1000)", detail: "Advance time in milliseconds while current motor powers remain active." },
+            ],
+          };
+        }
+        return group;
+      });
+    return motorGroups;
+  }, [experienceLevel]);
   const filteredCommandGroups = useMemo(() => {
     const query = commandSearch.trim().toLowerCase();
-    if (!query) return commandReferenceGroups;
+    if (!query) return activeCommandGroups;
 
-    return commandReferenceGroups
+    return activeCommandGroups
       .map((group) => ({
         ...group,
         commands: group.commands.filter((command) => `${command.name} ${command.detail} ${group.type}`.toLowerCase().includes(query)),
       }))
       .filter((group) => group.commands.length > 0);
-  }, [commandSearch]);
+  }, [activeCommandGroups, commandSearch]);
 
   const beginCommandWindowDrag = (event: PointerEvent<HTMLDivElement>) => {
     dragStart.current = {
@@ -263,7 +295,7 @@ export function InputPanel({
         onPointerUp={endCommandWindowDrag}
         onPointerCancel={endCommandWindowDrag}
       >
-        <strong>Commands</strong>
+        <strong>Level {activeLevel.number} commands</strong>
         <button
           type="button"
           onPointerDown={(event) => {
@@ -337,17 +369,55 @@ export function InputPanel({
         </div>
       </section>
 
+      {controlMode === "autonomous" && !learningMode && <section className="setup-section complexity-section">
+        <label className="form-label">Code complexity</label>
+        <div className="complexity-toggle" role="group" aria-label="Code complexity level">
+          {complexityLevels.map((level) => (
+            <button
+              key={level.id}
+              type="button"
+              className={experienceLevel === level.id ? `active ${level.accent}` : level.accent}
+              aria-pressed={experienceLevel === level.id}
+              onClick={() => setExperienceLevel(level.id)}
+            >
+              Level {level.number}
+            </button>
+          ))}
+        </div>
+        <div className={`complexity-summary ${activeLevel.accent}`}>
+          <div><strong>{activeLevel.title}</strong><span>{activeLevel.syntaxLabel}</span></div>
+          <p>{activeLevel.syntaxNote}</p>
+        </div>
+      </section>}
+
+      {controlMode === "autonomous" && learningMode && <section className="setup-section learning-scenario-section">
+          <label className="form-label" htmlFor="learning-scenario">Scenario</label>
+          <div className="select-wrap">
+            <select id="learning-scenario" value={selectedScenario.id} onChange={(event) => setSelectedScenarioId(event.target.value)}>
+              {activeLevel.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.number} · {scenario.title}</option>)}
+            </select>
+            <span>v</span>
+          </div>
+          <div className="scenario-brief">
+            <strong>{selectedScenario.title}</strong>
+            <span className="scenario-focus">Focus · {selectedScenario.focus}</span>
+            <p>{selectedScenario.description}</p>
+            <ul>{selectedScenario.successCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
+          </div>
+      </section>}
+
       {learningMode && experienceLevel === "beginner" && <div className="beginner-tip"><b>NEW HERE?</b><span>Code is just a list of instructions. The robot reads them from top to bottom.</span></div>}
 
       <section className="setup-section goal-section">
-        <label className="form-label" htmlFor="goal">Robot goal</label>
-        <textarea id="goal" className="goal-input" value={goal} onChange={(event) => setGoal(event.target.value)} />
+        <label className="form-label" htmlFor="goal">{learningMode ? "Learning objective" : "Robot goal"}</label>
+        {learningMode && <p className="objective-focus"><span>FOCUS</span>{selectedScenario.focus}</p>}
+        <textarea id="goal" className="goal-input" value={goal} readOnly={learningMode} onChange={(event) => setGoal(event.target.value)} />
       </section>
 
       <section className="setup-section code-section">
         <div className="input-label-row">
           <label className="form-label" htmlFor="code">Robot code</label>
-          <span>LOCAL SIMULATION</span>
+          <span>LEVEL {activeLevel.number} · {activeLevel.title.toUpperCase()}</span>
         </div>
         <textarea id="code" spellCheck={false} className="code-input" value={code} onChange={(event) => setCode(event.target.value)} />
         <div className="command-reference-dock">

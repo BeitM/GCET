@@ -1,0 +1,82 @@
+ROBOLAB FTC - STRUCTURED LEARNING SOLUTIONS
+============================================
+
+Instructor/reference copy. The in-app lesson starters intentionally omit
+required commands so students can complete each objective themselves.
+
+
+LEVEL 1 - COMMAND BASICS
+------------------------
+
+Lesson 1A - Move and Face
+
+driveForward(24);
+driveRight(12);
+turn(90);
+
+
+Lesson 1B - Score the Preload
+
+driveToPosition(72, 90, 145);
+spinFlywheel(2400);
+shoot(60);
+
+
+LEVEL 2 - MOTOR CONTROL
+-----------------------
+
+Lesson 2A - Timed Motor Drive
+
+frontLeftDrive.setPower(0.5);
+frontRightDrive.setPower(0.5);
+rearLeftDrive.setPower(0.5);
+rearRightDrive.setPower(0.5);
+wait(1);
+stopDriveMotors();
+
+
+Lesson 2B - Power, Wait, Fire
+
+leftFlywheel.setPower(0.4);
+rightFlywheel.setPower(-0.4);
+wait(1.5);
+shoot(60);
+stopAllMotors();
+
+
+LEVEL 3 - FTC JAVA STRUCTURE
+----------------------------
+
+Lesson 3A - Java Autonomous Drive
+
+@Autonomous(name = "Timed Drive")
+public class TimedDriveAuto extends LinearOpMode {
+    @Override
+    public void runOpMode() {
+        waitForStart();
+
+        frontLeftDrive.setPower(0.45);
+        frontRightDrive.setPower(0.45);
+        rearLeftDrive.setPower(0.45);
+        rearRightDrive.setPower(0.45);
+        sleep(1000);
+        stopDriveMotors();
+    }
+}
+
+
+Lesson 3B - Java Preload Auto
+
+@Autonomous(name = "Preload Auto")
+public class PreloadAuto extends LinearOpMode {
+    @Override
+    public void runOpMode() {
+        waitForStart();
+
+        leftFlywheel.setPower(0.4);
+        rightFlywheel.setPower(-0.4);
+        sleep(1500);
+        shoot(60);
+        stopAllMotors();
+    }
+}

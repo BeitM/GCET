@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { AIChatMessage, AIFeedback, AnalyzeRequest, AnalyzeResponse, AnalyzeRobotSetup, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ScoreEvent, TelemetryFrame } from "@/lib/types";
+import type { AIChatMessage, AIFeedback, AnalyzeLearningContext, AnalyzeRequest, AnalyzeResponse, AnalyzeRobotSetup, DecodeRuleViolation, DecodeTelemetryMetrics, ScoreBreakdown, ScoreEvent, TelemetryFrame } from "@/lib/types";
 import { sanitizeMotorPowers } from "@/lib/motors";
 import { selectAnalysisFrames } from "@/lib/analysis";
 
@@ -255,6 +255,7 @@ function sanitizeAnalyzeRequest(value: unknown): AnalyzeRequest | null {
     goal: safeText(value.goal, "Improve DECODE performance.", 800),
     code: safeText(value.code, "", 12_000),
     robotSetup,
+    learningContext: sanitizeLearningContext(value.learningContext),
     frames: selectAnalysisFrames(frames),
     messages,
     question,
@@ -290,6 +291,8 @@ const decodeContext = {
     "intakeSpinIn(): collect artifacts on front-intake contact up to 3 stored artifacts.",
     "intakeSpinOut(): release stored artifacts.",
     "wait(value): wait seconds for flywheel spin-up, object settling, or timing.",
+    "Named FTC-style motors support setPower(value); drive and mechanism motors remain powered until a later command changes or stops them.",
+    "waitForStart() and sleep(milliseconds) are supported only as a LinearOpMode-shaped training subset; RoboLab does not compile arbitrary Java or the FTC SDK.",
   ],
   strategyPriorities: [
     "Prioritize reliable own-goal scoring over risky shots.",
@@ -343,9 +346,20 @@ function attemptedShotCount(frames: TelemetryFrame[], telemetryAttempted: number
 
 function requestedShotCount(goal: string) {
   const lower = goal.toLowerCase();
-  const digitMatch = lower.match(/(?:shoot|score|fire|launch)\D{0,24}(\d+)/) || lower.match(/(\d+)\D{0,16}(?:artifact|shot)/);
+  const digitMatch = lower.match(/\b(\d+)\s+(?:preloads?|artifacts?|shots?)\b/)
+    || lower.match(/\b(?:shoot|score|fire|launch)\s+(?:exactly\s+)?(\d+)\b/);
   if (digitMatch) return Math.max(1, Number(digitMatch[1]));
-  if (/\b(one|a|an)\b/.test(lower) && /(?:shoot|score|fire|launch|artifact)/.test(lower)) return 1;
+
+  const wordCounts: Array<[RegExp, number]> = [
+    [/\b(?:two|twice)\b/, 2],
+    [/\b(?:three|thrice)\b/, 3],
+  ];
+  for (const [pattern, count] of wordCounts) {
+    if (pattern.test(lower) && /(?:shoot|score|fire|launch|preload|artifact|shot)/.test(lower)) return count;
+  }
+
+  if (/\b(?:one|once|single)\b/.test(lower) && /(?:shoot|score|fire|launch|preload|artifact|shot)/.test(lower)) return 1;
+  if (/\b(?:a|an)\s+(?:preload|artifact|shot)\b/.test(lower)) return 1;
   return /(?:shoot|score|fire|launch)/.test(lower) ? 1 : 0;
 }
 
@@ -670,6 +684,27 @@ function structuredResponse(feedback: AIFeedback, mode: AnalyzeResponse["mode"],
   };
 }
 
+function sanitizeLearningContext(value: unknown): AnalyzeLearningContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const level = value.level === "intermediate" || value.level === "advanced" ? value.level : "beginner";
+  const levelNumber = level === "beginner" ? 1 : level === "intermediate" ? 2 : 3;
+  const successCriteria = Array.isArray(value.successCriteria)
+    ? value.successCriteria.slice(0, 8).flatMap((criterion) => typeof criterion === "string" && criterion.trim() ? [criterion.slice(0, 240)] : [])
+    : [];
+
+  return {
+    mode: value.mode === "learning" ? "learning" : "sandbox",
+    level,
+    levelNumber,
+    levelTitle: safeText(value.levelTitle, `Level ${levelNumber}`, 120),
+    syntaxLabel: safeText(value.syntaxLabel, "RoboLab commands", 120),
+    scenarioId: optionalText(value.scenarioId, 120),
+    scenarioTitle: optionalText(value.scenarioTitle, 160),
+    scenarioFocus: optionalText(value.scenarioFocus, 240),
+    successCriteria,
+  };
+}
+
 function parseOpenAIFeedback(content: string, goalAchieved: boolean): AIFeedback | null {
   let parsed: unknown;
   try {
@@ -768,6 +803,9 @@ async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback): Promise
               "Use the provided app context, robot code, setup, DECODE terminology, command model, and telemetry only.",
               "First decide whether the user's intended goal was met, then explain that decision in plain language.",
               "Be specific, concise, and avoid generic encouragement or canned wording.",
+              payload.learningContext
+                ? `Keep code advice within Level ${payload.learningContext.levelNumber} (${payload.learningContext.syntaxLabel}). Do not suggest commands or Java features beyond that selected complexity. ${payload.learningContext.mode === "learning" ? "Use scenarioFocus as the teaching priority and explicitly assess each supplied success criterion." : "Offer general debugging and optimization feedback for the sandbox run."}`
+                : "Keep code suggestions within RoboLab's supported command model.",
               payload.question
                 ? "Answer the follow-up question directly in 2-4 short markdown bullets and do not restate the full telemetry summary."
                 : "Generate every feedback field with run-specific wording. Cite exact score, shot, motion, RPM, timing, warning, or code evidence when available.",
@@ -782,10 +820,11 @@ async function runOpenAI(payload: AnalyzeRequest, feedback: AIFeedback): Promise
               intendedGoal: payload.goal,
               code: payload.code,
               robotSetup: payload.robotSetup,
+              learningContext: payload.learningContext,
               goalEvaluation,
               question: payload.question,
               summary,
-              instruction: "Treat summary.score and summary.scoreEvents as authoritative because they come from the recorded physics playback and classifier crossing detector.",
+              instruction: "Treat summary.score and summary.scoreEvents as authoritative because they come from the recorded physics playback and classifier crossing detector. Telemetry x/y values and summary.finalPose are already converted to robotSetup.coordinateSystem, so compare them directly with coordinate arguments in the submitted code.",
               recentMessages: (payload.messages || []).slice(-MAX_CHAT_MESSAGES),
             }),
           },

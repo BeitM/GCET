@@ -89,11 +89,24 @@ export type AnalyzeRobotSetup = {
   selectedArtifactRows:ArtifactRowId[];
 };
 
+export type AnalyzeLearningContext = {
+  mode:"sandbox"|"learning";
+  level:"beginner"|"intermediate"|"advanced";
+  levelNumber:1|2|3;
+  levelTitle:string;
+  syntaxLabel:string;
+  scenarioId?:string;
+  scenarioTitle?:string;
+  scenarioFocus?:string;
+  successCriteria:string[];
+};
+
 export type AnalyzeRequest = {
   goal:string;
   code:string;
   robotSetup:AnalyzeRobotSetup;
   frames:TelemetryFrame[];
+  learningContext?:AnalyzeLearningContext;
   messages?:AIChatMessage[];
   question?:string;
 };
