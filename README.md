@@ -201,7 +201,7 @@ The current implementation includes:
 - A small RoboLab autonomous command DSL, including JavaScript-style per-motor `setPower` calls and open-loop mecanum motion, plus keyboard TeleOp controls
 - Telemetry recording, timeline playback, rule warnings, and classifier scoring
 - Deterministic mentor feedback with optional OpenAI-generated analysis and follow-up chat
-- A validated and bounded `/api/analyze` route that receives code, robot setup, and compact telemetry
+- A validated and bounded `/ftc/api/analyze` endpoint that receives code, robot setup, and compact telemetry
 
 Current limitations:
 
@@ -241,7 +241,9 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to choose a mode. The open Sandbox is available at [http://localhost:3000/simulator?mode=sandbox](http://localhost:3000/simulator?mode=sandbox), and the structured level hub is at [http://localhost:3000/learn](http://localhost:3000/learn).
+Open [http://localhost:3000/ftc](http://localhost:3000/ftc) to choose a mode. The open Sandbox is available at [http://localhost:3000/ftc/simulator?mode=sandbox](http://localhost:3000/ftc/simulator?mode=sandbox), and the structured level hub is at [http://localhost:3000/ftc/learn](http://localhost:3000/ftc/learn).
+
+Production is deployed from `main` as an independent Vercel project with `my-app/frontend` as its Root Directory. The app uses the fixed `/ftc` base path and is presented publicly through `https://robo-labs.net/ftc` by the RoboLab Hub rewrite layer.
 
 ### Scripts
 

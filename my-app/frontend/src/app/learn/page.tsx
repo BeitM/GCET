@@ -6,7 +6,10 @@ export default function LearningPage() {
     <main className="landing-shell learning-shell">
       <nav className="landing-nav">
         <Link href="/" className="brand"><span className="brand-mark">R</span><span>RoboLab <b>FTC</b></span></Link>
-        <div className="nav-status"><span className="live-dot" /> Learning mode</div>
+        <div className="nav-status">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- cross-zone navigation must perform a full page load */}
+          <a href="/">RoboLab Hub</a> <span aria-hidden="true">·</span> <span className="live-dot" /> Learning mode
+        </div>
         <Link href="/simulator?mode=sandbox&level=1" className="button button-secondary">Open sandbox <span>↗</span></Link>
       </nav>
 

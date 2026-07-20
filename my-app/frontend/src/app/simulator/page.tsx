@@ -15,6 +15,7 @@ import { parseRobotCode } from "@/lib/autonomous";
 import { clampMotorPower, driveAxesFromMotorPowers, mecanumMotorPowers, setMotorPower, sidePowersFromMotors, stoppedMotorPowers, type RobotMotorPowers } from "@/lib/motors";
 import { createVirtualGamepadSnapshot, GamepadPair, GamepadSnapshot, isAnalogControl, isBindingActive, parseTeleopBindings, readConnectedGamepads, readGamepadControl, TeleopBinding } from "@/lib/teleop";
 import { getComplexityLevel, getLearningScenario, getLearningScenarioNavigation, normalizeExperienceLevel, type ExperienceLevel, type LearningScenario } from "@/lib/learning";
+import { withBasePath } from "@/lib/basePath";
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -1989,7 +1990,7 @@ export default function SimulatorDashboard() {
     setAnalysisPending(true);
     setAnalysisError("");
     try {
-      const response = await fetch("/api/analyze", {
+      const response = await fetch(withBasePath("/api/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

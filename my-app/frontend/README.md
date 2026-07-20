@@ -12,7 +12,11 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) or go directly to [http://localhost:3000/simulator](http://localhost:3000/simulator).
+Open [http://localhost:3000/ftc](http://localhost:3000/ftc) or go directly to [http://localhost:3000/ftc/simulator](http://localhost:3000/ftc/simulator).
+
+## Deployment path
+
+Vercel deploys this app from the repository's `main` branch with `my-app/frontend` as the project Root Directory. The fixed Next.js base path is `/ftc`; RoboLab Hub proxies `https://robo-labs.net/ftc/*` to this deployment.
 
 ## Commands
 

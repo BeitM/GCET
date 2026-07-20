@@ -12,7 +12,7 @@ RoboLab is an AI-assisted FTC robotics coding and simulation platform for studen
 - Three.js through React Three Fiber/Drei and Rapier for the DECODE field, robot, artifacts, shots, and playback.
 - Browser-side Autonomous and TeleOp simulation, command parsing, motor state, telemetry recording, and scoring.
 - TeleOp supports keyboard input plus one physical browser gamepad or an on-screen virtual gamepad. Gamepad UI and bindings must remain isolated to TeleOp.
-- Node-runtime `POST /api/analyze` route with deterministic feedback and an optional server-side OpenAI call.
+- Node-runtime `POST /ftc/api/analyze` public endpoint (implemented by the app-local `/api/analyze` route) with deterministic feedback and an optional server-side OpenAI call.
 - Offline FreeCAD and Blender utilities inspect STEP assemblies and produce or verify field assets.
 - No database, real authentication, persistence, automated test suite, or CI is currently present.
 
@@ -21,7 +21,7 @@ RoboLab is an AI-assisted FTC robotics coding and simulation platform for studen
 - `my-app/frontend/src/app/page.tsx` — homepage and Sandbox/Learning entry points.
 - `my-app/frontend/src/app/learn/page.tsx` — structured learning level hub.
 - `my-app/frontend/src/app/simulator/page.tsx` — simulator orchestration and simulation engine.
-- `my-app/frontend/src/app/api/analyze/route.ts` — telemetry validation, deterministic coaching, and optional AI provider call.
+- `my-app/frontend/src/app/api/analyze/route.ts` — telemetry validation, deterministic coaching, and optional AI provider call, publicly served under `/ftc/api/analyze`.
 - `my-app/frontend/src/app/robot-preview/page.tsx` — internal robot/motor inspection bench; not a primary user-flow destination.
 - `my-app/frontend/src/components/FieldScene3D.tsx` — Three/Rapier field and physics recording.
 - `my-app/frontend/src/components/VirtualGamepad.tsx` — TeleOp-only virtual controller.

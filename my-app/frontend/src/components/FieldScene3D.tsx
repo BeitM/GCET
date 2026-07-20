@@ -9,6 +9,7 @@ import { AllianceColor, ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, S
 import { ShooterRobotModel } from "@/components/ShooterRobotModel";
 import { DECODE_ROBOT_MODEL_FOOTPRINT_METERS, DECODE_ROBOT_MODEL_ROOT_Y, decodeShooterMuzzlePosition } from "@/components/DecodeRobotModel";
 import { RobotPresetId } from "@/lib/robots";
+import { withBasePath } from "@/lib/basePath";
 
 const INCHES_TO_METERS = 0.0254;
 const FIELD_INCHES = 144;
@@ -133,7 +134,7 @@ function FlatTape({
 }
 
 function DecodeFieldModel() {
-  const { scene } = useGLTF("/models/fields/decode-field.glb");
+  const { scene } = useGLTF(withBasePath("/models/fields/decode-field.glb"));
   const model = useMemo(() => scene.clone(true), [scene]);
 
   useEffect(() => {
@@ -935,4 +936,4 @@ export function FieldScene3D(props: FieldScene3DProps) {
   );
 }
 
-useGLTF.preload("/models/fields/decode-field.glb");
+useGLTF.preload(withBasePath("/models/fields/decode-field.glb"));

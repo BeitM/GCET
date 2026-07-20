@@ -11,7 +11,10 @@ export default function LandingPage() {
     <main className="landing-shell">
       <nav className="landing-nav">
         <Link href="/" className="brand"><span className="brand-mark">R</span><span>RoboLab <b>FTC</b></span></Link>
-        <div className="nav-links"><Link href="/simulator?mode=sandbox">Sandbox</Link><Link href="/learn">Learning mode</Link></div>
+        <div className="nav-links">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- cross-zone navigation must perform a full page load */}
+          <a href="/">RoboLab Hub</a><Link href="/simulator?mode=sandbox">Sandbox</Link><Link href="/learn">Learning mode</Link>
+        </div>
         <Link href="/simulator?mode=sandbox" className="button button-secondary">Open sandbox <span>↗</span></Link>
       </nav>
 
