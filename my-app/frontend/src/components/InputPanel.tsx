@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { complexityLevels, getComplexityLevel, type ExperienceLevel } from "@/lib/learning";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { AllianceColor, ArtifactRowId, ControlMode, CoordinateSystem } from "@/lib/types";
+import { RobotCodeEditor, type RobotCodeCompletion } from "@/components/RobotCodeEditor";
 
 const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
   { id: "topLoading", label: "Blue Loading Zone" },
@@ -15,7 +16,12 @@ const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
   { id: "bottomLeft", label: "Red 3" },
 ];
 
-const commandReferenceGroups = [
+type CommandReferenceGroup = {
+  type: string;
+  commands: { name: string; snippet: string; detail: string }[];
+};
+
+const commandReferenceGroups: CommandReferenceGroup[] = [
   {
     type: "Drive",
     commands: [
@@ -67,6 +73,36 @@ const commandReferenceGroups = [
       { name: "wait(value)", snippet: "wait(1)", detail: "Advance for seconds while current motor powers remain active." },
     ],
   },
+];
+
+const teleopCommandReferenceGroups: CommandReferenceGroup[] = [
+  {
+    type: "Drive bindings",
+    commands: [
+      { name: "driveForward(value)", snippet: "driveForward(1)", detail: "Drive forward while the binding is active." },
+      { name: "driveBackward(value)", snippet: "driveBackward(1)", detail: "Drive backward while the binding is active." },
+      { name: "driveLeft(value)", snippet: "driveLeft(1)", detail: "Strafe left while the binding is active." },
+      { name: "driveRight(value)", snippet: "driveRight(1)", detail: "Strafe right while the binding is active." },
+      { name: "turnLeft(value)", snippet: "turnLeft(1)", detail: "Turn left while the binding is active." },
+      { name: "turnRight(value)", snippet: "turnRight(1)", detail: "Turn right while the binding is active." },
+    ],
+  },
+  {
+    type: "Mechanism bindings",
+    commands: [
+      { name: "spinFlywheel(value)", snippet: "spinFlywheel(3600)", detail: "Set the flywheel RPM while the binding is active." },
+      { name: "shoot(value)", snippet: "shoot(60)", detail: "Fire one artifact at the selected hood angle." },
+      { name: "intakeSpinIn()", snippet: "intakeSpinIn()", detail: "Run the intake inward." },
+      { name: "intakeSpinOut()", snippet: "intakeSpinOut()", detail: "Run the intake outward." },
+      { name: "intakeStopSpin()", snippet: "intakeStopSpin()", detail: "Stop the intake." },
+    ],
+  },
+];
+
+const teleopGamepadControls = [
+  "a", "b", "x", "y", "left_bumper", "right_bumper", "left_trigger", "right_trigger",
+  "left_stick_x", "left_stick_y", "right_stick_x", "right_stick_y", "dpad_up", "dpad_down",
+  "dpad_left", "dpad_right", "start", "back",
 ];
 
 type InputPanelProps = {
@@ -228,6 +264,7 @@ export function InputPanel({
     ? { min: -72, max: 72, detail: "Center origin" }
     : { min: 0, max: 144, detail: "Corner origin" };
   const activeCommandGroups = useMemo(() => {
+    if (controlMode === "teleop") return teleopCommandReferenceGroups;
     if (experienceLevel === "beginner") {
       return commandReferenceGroups
         .filter((group) => group.type === "Drive" || group.type === "Shooter" || group.type === "Intake")
@@ -256,7 +293,23 @@ export function InputPanel({
         return group;
       });
     return motorGroups;
-  }, [experienceLevel]);
+  }, [controlMode, experienceLevel]);
+  const editorCompletions = useMemo<RobotCodeCompletion[]>(() => [
+    ...activeCommandGroups.flatMap((group) => group.commands.map((command) => ({
+      label: command.name,
+      insertText: `${command.snippet};`,
+      detail: command.detail,
+      group: group.type,
+      kind: "function" as const,
+    }))),
+    ...(controlMode === "teleop" ? teleopGamepadControls.map((control) => ({
+      label: `gamepad1.${control}`,
+      insertText: `gamepad1.${control}`,
+      detail: control.includes("stick") ? "Gamepad axis" : control.includes("trigger") ? "Analog trigger" : "Gamepad button",
+      group: "gamepad1",
+      kind: "field" as const,
+    })) : []),
+  ], [activeCommandGroups, controlMode]);
   const filteredCommandGroups = useMemo(() => {
     const query = commandSearch.trim().toLowerCase();
     if (!query) return activeCommandGroups;
@@ -304,7 +357,7 @@ export function InputPanel({
         onPointerUp={endCommandWindowDrag}
         onPointerCancel={endCommandWindowDrag}
       >
-        <strong>Level {activeLevel.number} commands</strong>
+        <strong>{controlMode === "teleop" ? "TeleOp commands" : `Level ${activeLevel.number} commands`}</strong>
         <button
           type="button"
           onPointerDown={(event) => {
@@ -430,15 +483,18 @@ export function InputPanel({
       <section className="setup-section code-section">
         <div className="input-label-row">
           <label className="form-label" htmlFor="code">Robot code</label>
-          <span>LEVEL {activeLevel.number} · {activeLevel.title.toUpperCase()}</span>
+          <span>{controlMode === "teleop" ? "TELEOP · GAMEPAD BINDINGS" : `LEVEL ${activeLevel.number} · ${activeLevel.title.toUpperCase()}`}</span>
         </div>
-        <textarea id="code" spellCheck={false} className="code-input" value={code} onChange={(event) => setCode(event.target.value)} />
-        <div className="command-reference-dock">
-          <button type="button" className="artifact-row-toggle command-reference-toggle" onClick={() => setShowCommandReference((open) => !open)}>
-            <span>{showCommandReference ? "Hide command reference" : "Command reference"}</span>
-            <b>{showCommandReference ? "-" : "+"}</b>
-          </button>
-        </div>
+        <RobotCodeEditor
+          id="code"
+          value={code}
+          onChange={setCode}
+          controlMode={controlMode}
+          levelNumber={activeLevel.number}
+          completions={editorCompletions}
+          commandReferenceOpen={showCommandReference}
+          onToggleCommandReference={() => setShowCommandReference((open) => !open)}
+        />
       </section>
 
       {(!learningMode || experienceLevel !== "beginner") && <section className="setup-section robot-configurator">
