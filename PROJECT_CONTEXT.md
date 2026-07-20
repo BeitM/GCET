@@ -1,6 +1,6 @@
 # RoboLab FTC — Project Context
 
-Snapshot: 2026-07-17. Active branch: `demo`, including the three-level learning curriculum and scenario-aware AI guidance.
+Snapshot: 2026-07-20. Active branch: `demo`, including the three-level learning curriculum, scenario-aware AI guidance, and the browser-side robot code IDE.
 
 ## Product and current scope
 
@@ -16,6 +16,7 @@ The prototype does not compile arbitrary JavaScript or FTC SDK Java and is not a
 4. TeleOp uses the same simulation, physics-recording, scoring, telemetry, and analysis path as Autonomous. It accepts keyboard controls plus `gamepad1` bindings from either the first connected browser gamepad or the on-screen virtual controller.
 5. Gamepad controls and UI appear only after TeleOp is selected. Keyboard input remains available as a fallback.
 6. Analysis receives bounded code, setup information, compact telemetry, recent chat, and the active learning level/scenario criteria. Before submission, recorded internal field positions are converted to the selected corner- or center-origin display coordinates so AI comparisons match the user's code. Generated advice is instructed to stay within the selected syntax complexity and assess the chosen scenario. It provides deterministic feedback only when the server key is missing, explicitly set to `mock`, or rejected as invalid. With a valid configured key, OpenAI generates the complete visible feedback structure and follow-up answers; provider failures surface as errors rather than silently falling back. The feedback header identifies the active model or local fallback source.
+7. The Robot Code section is a browser-side mock IDE over the same plain code string consumed by simulation and analysis. It provides Java-aware syntax colors, line numbers, contextual Autonomous or TeleOp completions, automatic indentation and bracket pairing, block indentation, comment toggling, in-file search, an expandable large-screen workspace, and editor status without compiling Java or changing the supported simulator subset.
 
 ## Architecture and entry points
 
@@ -38,6 +39,7 @@ my-app/frontend/
   src/app/robot-preview/page.tsx        Internal CAD/motor inspection bench
   src/components/FieldScene3D.tsx      Three/Rapier field and recording
   src/components/VirtualGamepad.tsx    TeleOp virtual controller
+  src/components/RobotCodeEditor.tsx   Browser-side mock IDE and contextual code completion
   src/lib/autonomous.ts                Autonomous command parser and command types
   src/lib/motors.ts                    Eight-channel motor helpers
   src/lib/learning.ts                  Complexity levels and six scenarios
@@ -115,3 +117,12 @@ There is no automated test runner yet.
 - A scenario-aware `/api/analyze` smoke request returned generated feedback from `gpt-5.6-terra`, including five run-specific evidence items.
 - A Level 1B regression smoke request using display pose `(72, 90, 145)` returned `complete` from `gpt-5.6-terra`; the response did not mention internal `y=54` or misread the 60-degree angle as 60 requested shots.
 - The in-app browser connection did not retain a controllable local test tab, so interactive visual verification remains to be repeated manually.
+
+## Verification (2026-07-20 robot code IDE)
+
+- ESLint, TypeScript, and the Next.js production build pass.
+- Browser checks confirmed Java-aware token classes for annotations, classes, keywords, functions, variables, strings, numbers, operators, and punctuation; contextual completion insertion and argument selection; bracket pairing; block indentation; and in-editor search.
+- Expanded-editor checks confirmed the large viewport overlay, larger code metrics, command-reference layering, edit and cursor continuity, backdrop/collapse/Escape exits, body-scroll restoration, and clean isolation from the Three.js field and telemetry workspace.
+- The default Autonomous program still completed playback with one classified goal, 3 points, telemetry, and local fallback analysis.
+- TeleOp kept its editor suggestions limited to supported actions and `gamepad1` controls, exposed the virtual controller only in TeleOp, and completed the existing start/stop and analysis-unlock lifecycle.
+- Browser console output contained only the existing Three.js and Rapier initialization deprecation warnings.
