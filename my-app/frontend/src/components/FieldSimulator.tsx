@@ -2,6 +2,7 @@ import { FieldScene3D } from "@/components/FieldScene3D";
 import { fieldSeasons } from "@/lib/seasons";
 import { ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { RobotPresetId } from "@/lib/robots";
+import { useTranslation } from "@/hooks/useTranslation";
 
 type FieldSimulatorProps = {
   frame: TelemetryFrame;
@@ -46,25 +47,26 @@ export function FieldSimulator({
   onSeek,
   onTogglePlayback,
 }: FieldSimulatorProps) {
+  const { t } = useTranslation();
   return (
     <section className="field-card panel clean-field-card">
       <div className="tool-panel-head">
         <div>
-          <h2>DECODE field</h2>
-          <p>2025–2026 season · Interactive 3D view</p>
+          <h2>{t("decodeField")}</h2>
+          <p>{t("season3d")}</p>
         </div>
         <div className="field-head-actions">
           <div className="compact-seasons">
             {fieldSeasons.map((season) => (
               <span key={season.id} className={season.status}>
                 {season.name}
-                {season.status === "coming-soon" && <small>Coming soon</small>}
+                {season.status === "coming-soon" && <small>{t("comingSoon")}</small>}
               </span>
             ))}
           </div>
           <div className={`run-state ${running ? "active" : ""}`}>
             <i />
-            {running ? "Running" : "Ready"}
+            {running ? t("running") : t("ready")}
           </div>
         </div>
       </div>
@@ -92,13 +94,13 @@ export function FieldSimulator({
               type="button"
               className={running ? "is-playing" : ""}
               onClick={onTogglePlayback}
-              aria-label={running ? "Pause simulation" : "Play simulation"}
+              aria-label={running ? t("pauseSimulation") : t("playSimulation")}
             >
               {running ? "Ⅱ" : "▶"}
-              <span>{running ? "Pause" : "Play"}</span>
+              <span>{running ? t("pause") : t("play")}</span>
             </button>
             <input
-              aria-label="Simulation timeline"
+              aria-label={t("simulationTimeline")}
               type="range"
               min="0"
               max={totalFrames - 1}

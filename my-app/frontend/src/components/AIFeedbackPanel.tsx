@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { AIFeedback } from "@/lib/types";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export function AIFeedbackPanel({ data, goal }: { data: AIFeedback | null; goal: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [rating, setRating] = useState<"up" | "down" | null>(null);
 
@@ -9,31 +11,31 @@ export function AIFeedbackPanel({ data, goal }: { data: AIFeedback | null; goal:
     return (
       <section className="ai-panel panel ai-empty">
         <div className="ai-orb">*</div>
-        <span className="kicker">AI MENTOR</span>
-        <h2>Ready when you are.</h2>
-        <p>Run the robot code, then request AI feedback to analyze the latest telemetry.</p>
+        <span className="kicker">{t("aiMentor")}</span>
+        <h2>{t("aiReadyTitle")}</h2>
+        <p>{t("aiReadyDescription")}</p>
       </section>
     );
   }
 
-  const report = `ROBOLAB FTC SIMULATION REPORT
-Goal: ${goal}
+  const report = `${t("reportTitle")}
+${t("reportGoal")}: ${goal}
 
 ${data.headline}
 
-WHAT HAPPENED
+${t("whatHappened")}
 ${data.happened}
 
-LIKELY CAUSE
+${t("likelyCause")}
 ${data.cause}
 
-EVIDENCE
+${t("telemetryEvidence")}
 - ${data.evidence.join("\n- ")}
 
-SUGGESTED FIX
+${t("suggestedFix")}
 ${data.fix}
 
-OPTIMIZATION
+${t("optimizationIdea")}
 ${data.optimization}`;
 
   const copy = async () => {
@@ -46,25 +48,25 @@ ${data.optimization}`;
     <section className="ai-panel panel">
       <div className="panel-head">
         <div>
-          <span className="kicker">AI MENTOR</span>
+          <span className="kicker">{t("aiMentor")}</span>
           <h2>{data.headline}</h2>
         </div>
-        <span className={`analysis-status ${data.status}`}>{data.status === "warning" ? "ACTION NEEDED" : "ANALYSIS READY"}</span>
+        <span className={`analysis-status ${data.status}`}>{data.status === "warning" ? t("actionNeeded") : t("analysisReady")}</span>
       </div>
-      <div className="feedback-lead"><span>WHAT HAPPENED</span><p>{data.happened}</p></div>
+      <div className="feedback-lead"><span>{t("whatHappened")}</span><p>{data.happened}</p></div>
       <div className="feedback-grid">
-        <article><span>LIKELY CAUSE</span><p>{data.cause}</p></article>
-        <article className="evidence"><span>TELEMETRY EVIDENCE</span><ul>{data.evidence.map((item) => <li key={item}>{item}</li>)}</ul></article>
-        <article className="fix"><span>SUGGESTED FIX</span><p>{data.fix}</p></article>
-        <article><span>OPTIMIZATION IDEA</span><p>{data.optimization}</p></article>
+        <article><span>{t("likelyCause")}</span><p>{data.cause}</p></article>
+        <article className="evidence"><span>{t("telemetryEvidence")}</span><ul>{data.evidence.map((item) => <li key={item}>{item}</li>)}</ul></article>
+        <article className="fix"><span>{t("suggestedFix")}</span><p>{data.fix}</p></article>
+        <article><span>{t("optimizationIdea")}</span><p>{data.optimization}</p></article>
       </div>
-      <div className="concept"><b>CONCEPT // WHY THIS WORKS</b><p>{data.concept}</p></div>
+      <div className="concept"><b>{t("conceptWhy")}</b><p>{data.concept}</p></div>
       <div className="report-tools">
-        <button onClick={copy}>{copied ? "Report copied" : "Copy debug report"}</button>
+        <button onClick={copy}>{copied ? t("reportCopied") : t("copyDebugReport")}</button>
         <div>
-          <span>Was this feedback helpful?</span>
-          <button className={rating === "up" ? "selected" : ""} onClick={() => setRating("up")}>Up</button>
-          <button className={rating === "down" ? "selected" : ""} onClick={() => setRating("down")}>Down</button>
+          <span>{t("feedbackHelpful")}</span>
+          <button className={rating === "up" ? "selected" : ""} onClick={() => setRating("up")}>{t("up")}</button>
+          <button className={rating === "down" ? "selected" : ""} onClick={() => setRating("down")}>{t("down")}</button>
         </div>
       </div>
     </section>

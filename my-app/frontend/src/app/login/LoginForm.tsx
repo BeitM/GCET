@@ -2,18 +2,16 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-
-const ROLE_LABEL: Record<string, string> = {
-  student: 'Student',
-  coach: 'Coach',
-};
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   const role = searchParams.get('role');
-  const roleLabel = role ? ROLE_LABEL[role] : undefined;
+  const roleLabel = role === 'student' ? t('student') : role === 'coach' ? t('coach') : undefined;
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -25,12 +23,13 @@ export default function LoginForm() {
   if (!role || !roleLabel) {
     return (
       <div className="app-shell flex flex-col items-center justify-center px-4 py-8 text-center">
-        <p className="mb-6 text-gray-300">Please choose a role to continue.</p>
+        <div className="absolute right-4 top-4"><LanguageSwitcher /></div>
+        <p className="mb-6 text-gray-300">{t('chooseRole')}</p>
         <button
           onClick={() => router.push('/')}
           className="rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white transition-all hover:bg-blue-500"
         >
-          ← Back to Home
+          ← {t('backToHome')}
         </button>
       </div>
     );
@@ -41,22 +40,22 @@ export default function LoginForm() {
     setError('');
 
     if (!email || !password) {
-      setError('Please fill in all fields');
+      setError(t('fillAllFields'));
       return;
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Please enter a valid email address');
+      setError(t('validEmail'));
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t('passwordLength'));
       return;
     }
 
     if (mode === 'signup' && password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('passwordsMismatch'));
       return;
     }
 
@@ -77,11 +76,12 @@ export default function LoginForm() {
 
   return (
     <div className="app-shell flex flex-col items-center justify-center px-4 py-8">
+      <div className="absolute right-4 top-4"><LanguageSwitcher /></div>
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="mb-2 text-4xl font-bold text-white sm:text-5xl">🤖 AI Robotics Trainer</h1>
+          <h1 className="mb-2 text-4xl font-bold text-white sm:text-5xl">{t('aiRoboticsTrainer')}</h1>
           <p className="text-gray-400">
-            {mode === 'signin' ? 'Sign in' : 'Sign up'} as {roleLabel}
+            {mode === 'signin' ? t('signInAs', { role: roleLabel }) : t('signUpAs', { role: roleLabel })}
           </p>
         </div>
 
@@ -100,7 +100,7 @@ export default function LoginForm() {
                   mode === 'signin' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                Sign In
+                {t('signIn')}
               </button>
               <button
                 type="button"
@@ -112,7 +112,7 @@ export default function LoginForm() {
                   mode === 'signup' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                 }`}
               >
-                Sign Up
+                {t('signUp')}
               </button>
             </div>
 
@@ -124,7 +124,7 @@ export default function LoginForm() {
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
-                <label className="mb-2 block font-medium text-white">Email Address</label>
+                <label className="mb-2 block font-medium text-white">{t('emailAddress')}</label>
                 <input
                   type="email"
                   value={email}
@@ -136,7 +136,7 @@ export default function LoginForm() {
               </div>
 
               <div>
-                <label className="mb-2 block font-medium text-white">Password</label>
+                <label className="mb-2 block font-medium text-white">{t('password')}</label>
                 <input
                   type="password"
                   value={password}
@@ -149,7 +149,7 @@ export default function LoginForm() {
 
               {mode === 'signup' && (
                 <div>
-                  <label className="mb-2 block font-medium text-white">Confirm Password</label>
+                  <label className="mb-2 block font-medium text-white">{t('confirmPassword')}</label>
                   <input
                     type="password"
                     value={confirmPassword}
@@ -165,21 +165,21 @@ export default function LoginForm() {
                 {loading ? (
                   <>
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"></div>
-                    {mode === 'signin' ? 'Signing in...' : 'Signing up...'}
+                    {mode === 'signin' ? t('signingIn') : t('signingUp')}
                   </>
                 ) : mode === 'signin' ? (
-                  'Sign In'
+                  t('signIn')
                 ) : (
-                  'Sign Up'
+                  t('signUp')
                 )}
               </button>
             </form>
 
             {mode === 'signin' && (
               <div className="mt-6 border-t border-gray-700 pt-6">
-                <p className="mb-3 text-xs text-gray-400">Demo Credentials:</p>
-                <p className="mb-1 text-xs text-gray-500"><span className="text-gray-400">Email:</span> demo@robotics.com</p>
-                <p className="text-xs text-gray-500"><span className="text-gray-400">Password:</span> password123</p>
+                <p className="mb-3 text-xs text-gray-400">{t('demoCredentials')}</p>
+                <p className="mb-1 text-xs text-gray-500"><span className="text-gray-400">{t('email')}</span> demo@robotics.com</p>
+                <p className="text-xs text-gray-500"><span className="text-gray-400">{t('password')}:</span> password123</p>
               </div>
             )}
           </div>
@@ -190,7 +190,7 @@ export default function LoginForm() {
             onClick={() => router.push('/')}
             className="text-sm font-medium text-gray-400 transition-colors hover:text-gray-300"
           >
-            ← Back to role selection
+            ← {t('backToRoleSelection')}
           </button>
         </div>
       </div>

@@ -8,6 +8,9 @@ import { FieldSimulator } from "@/components/FieldSimulator";
 import { InputPanel } from "@/components/InputPanel";
 import { TelemetryPanel } from "@/components/TelemetryPanel";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useTranslation } from "@/hooks/useTranslation";
+import { getTranslation } from "@/lib/translations";
 
 type StartPose = { x: number; y: number; heading: number };
 type ArtifactSpec = { id: string; row: ArtifactRowId; x: number; y: number; color: "green" | "purple" };
@@ -557,6 +560,7 @@ const isAIFeedback = (value: unknown): value is AIFeedback => {
 };
 
 export default function SimulatorDashboard() {
+  const { t, language } = useTranslation();
   const [experienceLevel, setExperienceLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [goal, setGoal] = useState(defaultGoal);
   const [code, setCode] = useState(defaultCode);
@@ -582,6 +586,7 @@ export default function SimulatorDashboard() {
   const physicsRecordingFrames = useRef<TelemetryFrame[] | null>(null);
   const physicsRecordingArtifacts = useRef<Map<number, ArtifactPhysicsState[]>>(new Map());
   const physicsRecordingShots = useRef<Map<number, ShotPhysicsState[]>>(new Map());
+  const localizedDefaultGoal = useRef(defaultGoal);
 
   const frame = frames[index] || frames[0];
   const events = frames.slice(0, index + 1).filter((item) => item.event || item.warning);
@@ -597,6 +602,13 @@ export default function SimulatorDashboard() {
     const updateLevel = window.setTimeout(() => setExperienceLevel(requestedLevel), 0);
     return () => window.clearTimeout(updateLevel);
   }, []);
+
+  useEffect(() => {
+    const previousDefaultGoal = localizedDefaultGoal.current;
+    const nextDefaultGoal = getTranslation(language, "defaultGoal");
+    setGoal((current) => current === previousDefaultGoal ? nextDefaultGoal : current);
+    localizedDefaultGoal.current = nextDefaultGoal;
+  }, [language]);
 
   const selectRobot = (id: RobotPresetId) => {
     const robot = robotPresets.find((item) => item.id === id)!;
@@ -747,7 +759,7 @@ export default function SimulatorDashboard() {
       setIndex(0);
       setHasRun(false);
       setAnalysis(null);
-      setSetupWarning("Invalid start position");
+      setSetupWarning(t("invalidStartPosition"));
       return;
     }
 
@@ -777,7 +789,7 @@ export default function SimulatorDashboard() {
 
     const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
     if (!selectedRobot) {
-      setSetupWarning("Robot configuration is missing");
+      setSetupWarning(t("robotConfigurationMissing"));
       return;
     }
 
@@ -793,6 +805,7 @@ export default function SimulatorDashboard() {
           body: JSON.stringify({
             goal,
             code,
+            uiLanguage: language,
             robotSetup: {
               robotId,
               robotName: selectedRobot.name,
@@ -812,26 +825,26 @@ export default function SimulatorDashboard() {
         if (!response.ok) {
           const message = typeof result === "object" && result && "error" in result && typeof result.error === "string"
             ? result.error
-            : "AI analysis request failed.";
+            : t("aiAnalysisRequestFailed");
           throw new Error(message);
         }
 
         if (!isAIFeedback(result)) {
-          throw new Error("AI response format was invalid.");
+          throw new Error(t("aiResponseInvalid"));
         }
 
         setAnalysis(result);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
         setAnalysis({
-          headline: "AI analysis unavailable",
+          headline: t("aiAnalysisUnavailable"),
           status: "warning",
-          happened: "The simulator generated telemetry, but the AI service could not return a valid analysis.",
-          cause: message,
-          evidence: ["Goal, code, robot setup, and recent telemetry were prepared", "No usable AI feedback object was returned"],
-          fix: "Check OPENAI_API_KEY and OPENAI_MODEL configuration, then retry analysis.",
-          optimization: "Reduce prompt size by shortening code or telemetry if provider limits are hit.",
-          concept: "The analyzer requires a live model endpoint and a valid structured JSON response.",
+          happened: t("aiUnavailableHappened"),
+          cause: `${t("aiUnavailableCause")} ${message}`,
+          evidence: [t("aiUnavailableEvidenceOne"), t("aiUnavailableEvidenceTwo")],
+          fix: t("aiUnavailableFix"),
+          optimization: t("aiUnavailableOptimization"),
+          concept: t("aiUnavailableConcept"),
         });
       } finally {
         setAnalyzing(false);
@@ -848,13 +861,13 @@ export default function SimulatorDashboard() {
     <main className="sim-shell">
       <header className="sim-nav">
         <Link href="/" className="brand"><span className="brand-mark">R</span><span>RoboLab <b>FTC</b></span></Link>
-        <div className="sim-title"><span>SIMULATION</span><i />{robotPresets.find((robot) => robot.id === robotId)?.name}</div>
-        <div className="sim-nav-right"><span><i className="live-dot" />SIMULATION READY</span><Link href="/">Exit lab x</Link></div>
+        <div className="sim-title"><span>{t("simulation")}</span><i />{robotId === "turret" ? t("turretShooter") : robotPresets.find((robot) => robot.id === robotId)?.name}</div>
+        <div className="sim-nav-right"><LanguageSwitcher /><span><i className="live-dot" />{t("simulationReady")}</span><Link href="/">{t("exitLab")}</Link></div>
       </header>
       <section className={`lab-guide ${experienceLevel}`}>
-        <div><span>{experienceLevel === "beginner" ? "BEGINNER · FIRST MISSION" : `${experienceLevel.toUpperCase()} LAB`}</span><strong>{experienceLevel === "beginner" ? "Make the robot drive, turn, and shoot." : experienceLevel === "intermediate" ? "Edit commands and connect movement to telemetry." : "Configure, test, and optimize the full system."}</strong></div>
-        <ol><li><b>1</b> Read the goal</li><li><b>2</b> Press Run</li><li><b>3</b> Ask the AI coach</li></ol>
-        <Link href="/#paths">Change level</Link>
+        <div><span>{experienceLevel === "beginner" ? t("beginnerFirstMission") : experienceLevel === "intermediate" ? t("intermediateLab") : t("advancedLab")}</span><strong>{experienceLevel === "beginner" ? t("beginnerGuide") : experienceLevel === "intermediate" ? t("intermediateGuide") : t("advancedGuide")}</strong></div>
+        <ol><li><b>1</b> {t("readGoal")}</li><li><b>2</b> {t("pressRun")}</li><li><b>3</b> {t("askAiCoach")}</li></ol>
+        <Link href="/#paths">{t("changeLevel")}</Link>
       </section>
       <div className="sim-layout">
         <InputPanel

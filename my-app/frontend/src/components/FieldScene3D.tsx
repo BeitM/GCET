@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { ArtifactPhysicsState, ArtifactRowId, CoordinateSystem, ShotPhysicsState, TelemetryFrame } from "@/lib/types";
 import { ShooterRobotModel } from "@/components/ShooterRobotModel";
 import { RobotPresetId } from "@/lib/robots";
+import { useTranslation } from "@/hooks/useTranslation";
 
 const INCHES_TO_METERS = 0.0254;
 const FIELD_INCHES = 144;
@@ -742,25 +743,26 @@ function Scene(props: FieldScene3DProps & { showReference: boolean; onMouseCoord
 }
 
 export function FieldScene3D(props: FieldScene3DProps) {
+  const { t } = useTranslation();
   const [showReference, setShowReference] = useState(false);
   const [mouseCoordinates, setMouseCoordinates] = useState<FieldMouseCoordinates>(null);
 
   return (
-    <div className="field-scene-3d" aria-label="Interactive 3D DECODE field simulation">
+    <div className="field-scene-3d" aria-label={t("interactiveFieldAria")}>
       <Canvas shadows dpr={[1, 1.75]} camera={{ position: [4.5, 4.6, 5.2], fov: 42, near: 0.1, far: 50 }}>
         <Suspense fallback={null}><Scene {...props} showReference={showReference} onMouseCoordinates={setMouseCoordinates} /></Suspense>
       </Canvas>
       <button type="button" className={`field-reference-toggle ${showReference ? "active" : ""}`} onClick={() => setShowReference((current) => !current)}>
-        Field compass
+        {t("fieldCompass")}
       </button>
       {showReference && (
         <div className="field-coordinate-readout" aria-live="polite">
-          <span>Mouse</span>
+          <span>{t("mouse")}</span>
           <b>{mouseCoordinates ? `X ${mouseCoordinates.x.toFixed(1)} in` : "X --"}</b>
           <b>{mouseCoordinates ? `Y ${mouseCoordinates.y.toFixed(1)} in` : "Y --"}</b>
         </div>
       )}
-      <div className="field-camera-hint">Drag to orbit · Scroll to zoom</div>
+      <div className="field-camera-hint">{t("cameraHint")}</div>
     </div>
   );
 }

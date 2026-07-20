@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  buildLanguagePolicyInstruction,
+  resolveResponseLanguage,
+  UI_LANGUAGES,
+  type UiLanguage,
+} from "@/lib/languagePolicy";
+import { getTranslation } from "@/lib/translations";
 
 type AnalyzeTelemetryFrame = {
   time: number;
@@ -24,6 +31,7 @@ type AnalyzeTelemetryFrame = {
 type AnalyzeRequest = {
   goal: string;
   code: string;
+  uiLanguage: UiLanguage;
   robotSetup: {
     robotId: string;
     robotName: string;
@@ -79,8 +87,9 @@ const parseJsonObject = (value: string): unknown => {
   }
 };
 
-const sanitizeFeedback = (value: unknown): AIFeedback | null => {
+const sanitizeFeedback = (value: unknown, language: UiLanguage): AIFeedback | null => {
   if (!isObject(value)) return null;
+  const t = (key: string) => getTranslation(language, key);
   const evidenceRaw = Array.isArray(value.evidence) ? value.evidence : [];
   const evidence = evidenceRaw
     .filter((item): item is string => typeof item === "string")
@@ -90,14 +99,14 @@ const sanitizeFeedback = (value: unknown): AIFeedback | null => {
 
   const status = value.status === "warning" ? "warning" : "complete";
   return {
-    headline: safeText(value.headline, "AI telemetry analysis", 140),
+    headline: safeText(value.headline, t("analysisReady"), 140),
     status,
-    happened: safeText(value.happened, "Simulation telemetry was analyzed.", 600),
-    cause: safeText(value.cause, "The code and robot state sequence suggest this behavior.", 600),
-    evidence: evidence.length ? evidence : ["Telemetry frames were provided to the model."],
-    fix: safeText(value.fix, "Adjust code to match the intended path and rerun the simulator.", 600),
-    optimization: safeText(value.optimization, "Tune powers and sequence timing for smoother execution.", 600),
-    concept: safeText(value.concept, "AI compares expected intent with observed telemetry transitions.", 600),
+    happened: safeText(value.happened, t("aiUnavailableHappened"), 600),
+    cause: safeText(value.cause, t("aiUnavailableCause"), 600),
+    evidence: evidence.length ? evidence : [t("aiUnavailableEvidenceOne")],
+    fix: safeText(value.fix, t("aiUnavailableFix"), 600),
+    optimization: safeText(value.optimization, t("aiUnavailableOptimization"), 600),
+    concept: safeText(value.concept, t("aiUnavailableConcept"), 600),
   };
 };
 
@@ -143,6 +152,10 @@ const sanitizeRequest = (value: unknown): AnalyzeRequest | null => {
   return {
     goal: safeText(value.goal, "Run robot routine", 800),
     code: safeText(value.code, "", 12000),
+    uiLanguage:
+      typeof value.uiLanguage === "string" && UI_LANGUAGES.includes(value.uiLanguage as UiLanguage)
+        ? value.uiLanguage as UiLanguage
+        : "en",
     robotSetup: {
       robotId: safeText(robotSetup.robotId, "unknown", 80),
       robotName: safeText(robotSetup.robotName, "Unknown robot", 120),
@@ -184,6 +197,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Request must include goal, code, robotSetup, and telemetry." }, { status: 400 });
   }
 
+  const responseLanguage = resolveResponseLanguage(payload.uiLanguage, payload.goal);
+
   const systemPrompt = [
     "You are an FTC robot coach analyzing simulation telemetry.",
     "Return only a JSON object with this exact shape:",
@@ -202,6 +217,8 @@ export async function POST(request: NextRequest) {
     "- If behavior misses the goal, set status=warning and give a concrete fix.",
     "- Keep each field concise and practical for student robotics debugging.",
     "- Do not include markdown, code fences, or extra keys.",
+    "",
+    buildLanguagePolicyInstruction(payload.uiLanguage, responseLanguage, payload.goal),
   ].join("\n");
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -244,7 +261,7 @@ export async function POST(request: NextRequest) {
   }
 
   const parsed = parseJsonObject(content);
-  const feedback = sanitizeFeedback(parsed);
+  const feedback = sanitizeFeedback(parsed, responseLanguage);
   if (!feedback) {
     return NextResponse.json({ error: "AI response JSON did not match expected feedback shape." }, { status: 502 });
   }

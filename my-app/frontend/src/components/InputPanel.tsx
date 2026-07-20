@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { ArtifactRowId, CoordinateSystem } from "@/lib/types";
+import { useTranslation } from "@/hooks/useTranslation";
 
-const artifactRowOptions: { id: ArtifactRowId; label: string }[] = [
-  { id: "topLoading", label: "Blue Loading Zone" },
-  { id: "topRight", label: "Blue 1" },
-  { id: "topCenter", label: "Blue 2" },
-  { id: "topLeft", label: "Blue 3" },
-  { id: "bottomLoading", label: "Red Loading Zone" },
-  { id: "bottomRight", label: "Red 1" },
-  { id: "bottomCenter", label: "Red 2" },
-  { id: "bottomLeft", label: "Red 3" },
+const artifactRowOptions: { id: ArtifactRowId; labelKey: string }[] = [
+  { id: "topLoading", labelKey: "blueLoadingZone" },
+  { id: "topRight", labelKey: "blueOne" },
+  { id: "topCenter", labelKey: "blueTwo" },
+  { id: "topLeft", labelKey: "blueThree" },
+  { id: "bottomLoading", labelKey: "redLoadingZone" },
+  { id: "bottomRight", labelKey: "redOne" },
+  { id: "bottomCenter", labelKey: "redTwo" },
+  { id: "bottomLeft", labelKey: "redThree" },
 ];
 
 type InputPanelProps = {
@@ -134,32 +135,33 @@ export function InputPanel({
   setPreloadCount,
   setupWarning,
 }: InputPanelProps) {
+  const { t } = useTranslation();
   const selectedRobot = robotPresets.find((robot) => robot.id === robotId);
   const [showArtifactRows, setShowArtifactRows] = useState(false);
   const coordinateBounds = coordinateSystem === "center"
-    ? { min: -72, max: 72, detail: "Center origin" }
-    : { min: 0, max: 144, detail: "Corner origin" };
+    ? { min: -72, max: 72, detail: t("centerOrigin") }
+    : { min: 0, max: 144, detail: t("cornerOrigin") };
 
   return (
     <aside className="input-panel panel">
       <div className="panel-head input-panel-head">
         <div>
-          <h2>{experienceLevel === "beginner" ? "Your first mission" : "Simulation setup"}</h2>
-          <p>{experienceLevel === "beginner" ? "The robot is ready. Read the goal, then press Run." : "Configure the robot code and virtual robot."}</p>
+          <h2>{experienceLevel === "beginner" ? t("firstMissionTitle") : t("simulationSetup")}</h2>
+          <p>{experienceLevel === "beginner" ? t("firstMissionDescription") : t("simulationSetupDescription")}</p>
         </div>
       </div>
 
-      {experienceLevel === "beginner" && <div className="beginner-tip"><b>NEW HERE?</b><span>Code is just a list of instructions. The robot reads them from top to bottom.</span></div>}
+      {experienceLevel === "beginner" && <div className="beginner-tip"><b>{t("newHere")}</b><span>{t("codeIsInstructions")}</span></div>}
 
       <section className="setup-section goal-section">
-        <label className="form-label" htmlFor="goal">Robot goal</label>
+        <label className="form-label" htmlFor="goal">{t("robotGoal")}</label>
         <textarea id="goal" className="goal-input" value={goal} onChange={(event) => setGoal(event.target.value)} />
       </section>
 
       <section className="setup-section code-section">
         <div className="input-label-row">
-          <label className="form-label" htmlFor="code">Robot code</label>
-          <span>LOCAL SIMULATION</span>
+          <label className="form-label" htmlFor="code">{t("robotCode")}</label>
+          <span>{t("localSimulation")}</span>
         </div>
         <textarea id="code" spellCheck={false} className="code-input" value={code} onChange={(event) => setCode(event.target.value)} />
       </section>
@@ -167,59 +169,59 @@ export function InputPanel({
       {experienceLevel !== "beginner" && <section className="setup-section robot-configurator">
         <div className="config-title">
           <div>
-            <label className="form-label">Robot preset</label>
-            <p>Select a starting configuration.</p>
+            <label className="form-label">{t("robotPreset")}</label>
+            <p>{t("selectStartingConfiguration")}</p>
           </div>
         </div>
         <div className="select-wrap robot-select">
           <select value={robotId} onChange={(event) => onRobot(event.target.value as RobotPresetId)}>
             {robotPresets.map((robot) => (
-              <option key={robot.id} value={robot.id}>{robot.name}</option>
+              <option key={robot.id} value={robot.id}>{robot.id === "turret" ? t("turretShooter") : robot.name}</option>
             ))}
           </select>
           <span>v</span>
         </div>
         <div className={`preset-summary ${selectedRobot?.accent}`}>
           <i />
-          <span>{selectedRobot?.description}</span>
+          <span>{selectedRobot?.id === "turret" ? t("turretDescription") : selectedRobot?.description}</span>
         </div>
-        <button type="button" className="cad-button" disabled><span>+</span> Import CAD <small>Coming later</small></button>
+        <button type="button" className="cad-button" disabled><span>+</span> {t("importCad")} <small>{t("comingLater")}</small></button>
       </section>}
 
       {experienceLevel === "advanced" && <section className="setup-section field-configurator">
         <div className="config-title">
           <div>
-            <label className="form-label">Field configuration</label>
+            <label className="form-label">{t("fieldConfiguration")}</label>
           </div>
         </div>
-        <div className="field-config-subtitle">Start position</div>
+        <div className="field-config-subtitle">{t("startPosition")}</div>
         <div className="dimension-controls start-pose-controls">
           <label>
             <span>X</span>
-            <NumberDraftInput ariaLabel="Robot start X position" min={coordinateBounds.min} max={coordinateBounds.max} value={startX} unit="in" onCommit={setStartX} />
+            <NumberDraftInput ariaLabel={t("startXAria")} min={coordinateBounds.min} max={coordinateBounds.max} value={startX} unit="in" onCommit={setStartX} />
           </label>
           <label>
             <span>Y</span>
-            <NumberDraftInput ariaLabel="Robot start Y position" min={coordinateBounds.min} max={coordinateBounds.max} value={startY} unit="in" onCommit={setStartY} />
+            <NumberDraftInput ariaLabel={t("startYAria")} min={coordinateBounds.min} max={coordinateBounds.max} value={startY} unit="in" onCommit={setStartY} />
           </label>
           <label>
-            <span>Heading</span>
-            <NumberDraftInput ariaLabel="Robot start heading" min={0} max={360} value={startHeading} unit="deg" onCommit={setStartHeading} />
+            <span>{t("heading")}</span>
+            <NumberDraftInput ariaLabel={t("startHeadingAria")} min={0} max={360} value={startHeading} unit="deg" onCommit={setStartHeading} />
           </label>
         </div>
-        <p className="dimension-note"><span>{coordinateBounds.detail}</span> coordinates shown in inches.</p>
+        <p className="dimension-note"><span>{coordinateBounds.detail}</span> {t("coordinatesShownInInches")}</p>
 
-        <div className="field-config-subtitle">Coordinate system</div>
+        <div className="field-config-subtitle">{t("coordinateSystem")}</div>
         <div className="select-wrap coordinate-system-select">
           <select value={coordinateSystem} onChange={(event) => setCoordinateSystem(event.target.value as CoordinateSystem)}>
-            <option value="corner">Corner origin - 0,0 at bottom left field corner</option>
-            <option value="center">Center origin - 0,0 at field center</option>
+            <option value="corner">{t("cornerOriginOption")}</option>
+            <option value="center">{t("centerOriginOption")}</option>
           </select>
           <span>v</span>
         </div>
-        <div className="field-config-subtitle">Add preload</div>
+        <div className="field-config-subtitle">{t("addPreload")}</div>
         <div className="preload-control">
-          <span>Artifacts in robot</span>
+          <span>{t("artifactsInRobot")}</span>
           <div className="select-wrap preload-select">
             <select value={preloadCount} onChange={(event) => setPreloadCount(Number(event.target.value))}>
               <option value={0}>0</option>
@@ -230,9 +232,9 @@ export function InputPanel({
             <span>v</span>
           </div>
         </div>
-        <div className="field-config-subtitle artifact-subtitle">Artifact rows <b>{selectedArtifactRows.length}/{artifactRowOptions.length}</b></div>
+        <div className="field-config-subtitle artifact-subtitle">{t("artifactRows")} <b>{selectedArtifactRows.length}/{artifactRowOptions.length}</b></div>
         <button type="button" className="artifact-row-toggle" onClick={() => setShowArtifactRows((open) => !open)}>
-          <span>{showArtifactRows ? "Hide row selector" : "Configure artifact rows"}</span>
+          <span>{showArtifactRows ? t("hideRowSelector") : t("configureArtifactRows")}</span>
           <b>{showArtifactRows ? "-" : "+"}</b>
         </button>
         {showArtifactRows && (
@@ -250,7 +252,7 @@ export function InputPanel({
                     setSelectedArtifactRows(selectedArtifactRows.filter((id) => id !== option.id));
                   }}
                 />
-                <span>{option.label}</span>
+                <span>{t(option.labelKey)}</span>
               </label>
             ))}
           </div>
@@ -260,20 +262,20 @@ export function InputPanel({
       <div className="input-actions">
         <button className="button run-button" onClick={onRun} disabled={running}>
           <span>{running ? "■" : "▶"}</span>
-          {running ? "Robot is moving..." : experienceLevel === "beginner" ? "Run my first mission" : "Run simulation"}
+          {running ? t("robotMoving") : experienceLevel === "beginner" ? t("runFirstMission") : t("runSimulation")}
         </button>
         {running && (
           <button className="button analyze-button" type="button" onClick={onStop}>
             <span>■</span>
-            Stop simulation
+            {t("stopSimulation")}
           </button>
         )}
         <button className="button analyze-button" disabled={!canAnalyze || running || analyzing} onClick={onAnalyze}>
           <span>*</span>
-          {analyzing ? "Analyzing run..." : experienceLevel === "beginner" ? "Ask the coach what happened" : "Get AI feedback"}
+          {analyzing ? t("analyzingRun") : experienceLevel === "beginner" ? t("askCoachWhatHappened") : t("getAiFeedback")}
         </button>
         {setupWarning && <p className="action-warning">{setupWarning}</p>}
-        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock AI feedback.</p>}
+        {!canAnalyze && !running && <p className="action-hint">{t("runToUnlockAi")}</p>}
       </div>
     </aside>
   );
