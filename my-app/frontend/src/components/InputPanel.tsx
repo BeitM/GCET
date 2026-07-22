@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { complexityLevels, getComplexityLevel, type ExperienceLevel } from "@/lib/learning";
+import type { LearningCheckResult } from "@/lib/learningEvaluation";
 import { robotPresets, RobotPresetId } from "@/lib/robots";
 import { AllianceColor, ArtifactRowId, ControlMode, CoordinateSystem } from "@/lib/types";
 import { RobotCodeEditor, type RobotCodeCompletion } from "@/components/RobotCodeEditor";
@@ -21,6 +22,13 @@ type CommandReferenceGroup = {
   commands: { name: string; snippet: string; detail: string }[];
 };
 
+function autocompleteCall(snippet: string) {
+  const openParenthesis = snippet.indexOf("(");
+  const closeParenthesis = snippet.lastIndexOf(")");
+  if (openParenthesis < 0 || closeParenthesis <= openParenthesis) return snippet;
+  return `${snippet.slice(0, openParenthesis + 1)}${snippet.slice(closeParenthesis)}`;
+}
+
 const commandReferenceGroups: CommandReferenceGroup[] = [
   {
     type: "Drive",
@@ -31,7 +39,8 @@ const commandReferenceGroups: CommandReferenceGroup[] = [
       { name: "driveRight(value)", snippet: "driveRight(12)", detail: "Strafe right by inches." },
       { name: "driveToPosition(x, y)", snippet: "driveToPosition(48, 48)", detail: "Drive to a coordinate while holding heading." },
       { name: "driveToPosition(x, y, heading)", snippet: "driveToPosition(48, 48, 90)", detail: "Drive to a coordinate while turning to heading." },
-      { name: "turn(value)", snippet: "turn(90)", detail: "Turn in place to an absolute heading in degrees." },
+      { name: "turn(degrees)", snippet: "turn(90)", detail: "Rotate by degrees relative to the robot's current heading." },
+      { name: "turnTo(heading)", snippet: "turnTo(90)", detail: "Turn in place to an absolute field heading." },
     ],
   },
   {
@@ -42,7 +51,7 @@ const commandReferenceGroups: CommandReferenceGroup[] = [
       { name: "rearLeftDrive.setPower(value)", snippet: "rearLeftDrive.setPower(0.6)", detail: "Set rear-left drive power from -1.0 to 1.0." },
       { name: "rearRightDrive.setPower(value)", snippet: "rearRightDrive.setPower(0.6)", detail: "Set rear-right drive power from -1.0 to 1.0." },
       { name: "setDriveMotorPowers(fl, fr, rl, rr)", snippet: "setDriveMotorPowers(0.6, 0.6, 0.6, 0.6)", detail: "Set all four mecanum drive channels together." },
-      { name: "intakeMotor.setPower(value)", snippet: "intakeMotor.setPower(1)", detail: "Positive power collects; negative power reverses." },
+      { name: "intake.setPower(value)", snippet: "intake.setPower(1)", detail: "Positive power collects; negative power reverses." },
       { name: "leftFlywheel.setPower(value)", snippet: "leftFlywheel.setPower(0.8)", detail: "Set the left shooter motor power." },
       { name: "rightFlywheel.setPower(value)", snippet: "rightFlywheel.setPower(-0.8)", detail: "Set the mirrored right shooter motor power." },
       { name: "turretMotor.setPower(value)", snippet: "turretMotor.setPower(0.2)", detail: "Rotate the turret gearbox at proportional speed." },
@@ -120,6 +129,8 @@ type InputPanelProps = {
   onRun: () => void;
   onStop: () => void;
   running: boolean;
+  onCheckSolution: () => void;
+  lessonCheck: LearningCheckResult | null;
   onAnalyze: () => void;
   analyzing: boolean;
   canAnalyze: boolean;
@@ -141,6 +152,30 @@ type InputPanelProps = {
   setPreloadCount: (value: number) => void;
   setupWarning: string;
 };
+
+function SetupSection({
+  title,
+  className,
+  children,
+  onToggle,
+  defaultOpen = false,
+}: {
+  title: string;
+  className: string;
+  children: ReactNode;
+  onToggle?: (open: boolean) => void;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details className={`setup-section ${className}`} open={defaultOpen} onToggle={(event) => onToggle?.(event.currentTarget.open)}>
+      <summary className="setup-section-summary">
+        <span>{title}</span>
+        <i aria-hidden="true" />
+      </summary>
+      <div className="setup-section-body">{children}</div>
+    </details>
+  );
+}
 
 function NumberDraftInput({
   ariaLabel,
@@ -229,6 +264,8 @@ export function InputPanel({
   onRun,
   onStop,
   running,
+  onCheckSolution,
+  lessonCheck,
   onAnalyze,
   analyzing,
   canAnalyze,
@@ -297,7 +334,7 @@ export function InputPanel({
   const editorCompletions = useMemo<RobotCodeCompletion[]>(() => [
     ...activeCommandGroups.flatMap((group) => group.commands.map((command) => ({
       label: command.name,
-      insertText: `${command.snippet};`,
+      insertText: `${autocompleteCall(command.snippet)};`,
       detail: command.detail,
       group: group.type,
       kind: "function" as const,
@@ -402,15 +439,69 @@ export function InputPanel({
   return (
     <>
     <aside className="input-panel panel">
-      <div className="panel-head input-panel-head">
-        <div>
-          <h2>{learningMode && experienceLevel === "beginner" ? "Your first mission" : learningMode ? "Guided lab" : "Simulation setup"}</h2>
-          <p>{learningMode && experienceLevel === "beginner" ? "The robot is ready. Read the goal, then press Run." : learningMode ? "Follow the level guidance, then test your changes." : "Configure the robot code and virtual robot."}</p>
+      <div className="input-panel-scroll">
+        <div className="panel-head input-panel-head">
+          <div>
+            <h2>{learningMode && experienceLevel === "beginner" ? "Your first mission" : learningMode ? "Guided lab" : "Simulation setup"}</h2>
+            <p>{learningMode && experienceLevel === "beginner" ? "The robot is ready. Review the instructions, then press Run." : learningMode ? "Follow the level guidance, then test your changes." : "Configure the robot code and virtual robot."}</p>
+          </div>
         </div>
-      </div>
 
-      <section className="setup-section mode-section">
-        <label className="form-label">Simulation mode</label>
+      <SetupSection
+        title={learningMode ? "Learning objective" : "Robot goal"}
+        className={learningMode ? "goal-section learning-objective-section" : "goal-section"}
+        defaultOpen
+      >
+        {learningMode ? <>
+          <label className="form-label" htmlFor="learning-scenario">Scenario</label>
+          <div className="select-wrap">
+            <select id="learning-scenario" aria-label="Scenario" value={selectedScenario.id} onChange={(event) => setSelectedScenarioId(event.target.value)}>
+              {complexityLevels.map((level) => (
+                <optgroup key={level.id} label={`Level ${level.number} · ${level.title}`}>
+                  {level.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.number} · {scenario.title}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <span>v</span>
+          </div>
+          <div className="learning-instructions">
+            <span>Instructions</span>
+            <ul>{selectedScenario.successCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
+          </div>
+        </> : <>
+          <textarea
+            id="goal"
+            aria-label="Robot goal"
+            className="goal-input"
+            value={goal}
+            placeholder="Describe what you want the robot to accomplish in this run."
+            onChange={(event) => setGoal(event.target.value)}
+          />
+          <p className="goal-help">Describe the result you want. Feedback will compare the run against this goal.</p>
+        </>}
+      </SetupSection>
+
+      <SetupSection
+        title="Robot code"
+        className="code-section"
+        onToggle={(open) => {
+          if (!open) setShowCommandReference(false);
+        }}
+        defaultOpen
+      >
+        <RobotCodeEditor
+          id="code"
+          value={code}
+          onChange={setCode}
+          controlMode={controlMode}
+          levelNumber={activeLevel.number}
+          completions={editorCompletions}
+          commandReferenceOpen={showCommandReference}
+          onToggleCommandReference={() => setShowCommandReference((open) => !open)}
+        />
+      </SetupSection>
+
+      {!learningMode && <SetupSection title="Simulation mode" className="mode-section">
         <div className={`mode-toggle ${controlMode}`} role="group" aria-label="Simulation mode">
           <button
             type="button"
@@ -429,10 +520,9 @@ export function InputPanel({
             TeleOp
           </button>
         </div>
-      </section>
+      </SetupSection>}
 
-      {controlMode === "autonomous" && !learningMode && <section className="setup-section complexity-section">
-        <label className="form-label">Code complexity</label>
+      {controlMode === "autonomous" && !learningMode && <SetupSection title="Code complexity" className="complexity-section">
         <div className="complexity-toggle" role="group" aria-label="Code complexity level">
           {complexityLevels.map((level) => (
             <button
@@ -450,62 +540,14 @@ export function InputPanel({
           <div><strong>{activeLevel.title}</strong><span>{activeLevel.syntaxLabel}</span></div>
           <p>{activeLevel.syntaxNote}</p>
         </div>
-      </section>}
-
-      {controlMode === "autonomous" && learningMode && <section className="setup-section learning-scenario-section">
-          <label className="form-label" htmlFor="learning-scenario">Scenario</label>
-          <div className="select-wrap">
-            <select id="learning-scenario" value={selectedScenario.id} onChange={(event) => setSelectedScenarioId(event.target.value)}>
-              {complexityLevels.map((level) => (
-                <optgroup key={level.id} label={`Level ${level.number} · ${level.title}`}>
-                  {level.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.number} · {scenario.title}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            <span>v</span>
-          </div>
-          <div className="scenario-brief">
-            <strong>{selectedScenario.title}</strong>
-            <span className="scenario-focus">Focus · {selectedScenario.focus}</span>
-            <p>{selectedScenario.description}</p>
-            <ul>{selectedScenario.successCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
-          </div>
-      </section>}
+      </SetupSection>}
 
       {learningMode && experienceLevel === "beginner" && <div className="beginner-tip"><b>NEW HERE?</b><span>Code is just a list of instructions. The robot reads them from top to bottom.</span></div>}
 
-      <section className="setup-section goal-section">
-        <label className="form-label" htmlFor="goal">{learningMode ? "Learning objective" : "Robot goal"}</label>
-        {learningMode && <p className="objective-focus"><span>FOCUS</span>{selectedScenario.focus}</p>}
-        <textarea id="goal" className="goal-input" value={goal} readOnly={learningMode} onChange={(event) => setGoal(event.target.value)} />
-      </section>
-
-      <section className="setup-section code-section">
-        <div className="input-label-row">
-          <label className="form-label" htmlFor="code">Robot code</label>
-          <span>{controlMode === "teleop" ? "TELEOP · GAMEPAD BINDINGS" : `LEVEL ${activeLevel.number} · ${activeLevel.title.toUpperCase()}`}</span>
-        </div>
-        <RobotCodeEditor
-          id="code"
-          value={code}
-          onChange={setCode}
-          controlMode={controlMode}
-          levelNumber={activeLevel.number}
-          completions={editorCompletions}
-          commandReferenceOpen={showCommandReference}
-          onToggleCommandReference={() => setShowCommandReference((open) => !open)}
-        />
-      </section>
-
-      {(!learningMode || experienceLevel !== "beginner") && <section className="setup-section robot-configurator">
-        <div className="config-title">
-          <div>
-            <label className="form-label">Robot preset</label>
-            <p>Select a starting configuration.</p>
-          </div>
-        </div>
+      {(!learningMode || experienceLevel !== "beginner") && <SetupSection title="Robot preset" className="robot-configurator">
+        <p className="setup-section-intro">Select a starting configuration.</p>
         <div className="select-wrap robot-select">
-          <select value={robotId} onChange={(event) => onRobot(event.target.value as RobotPresetId)}>
+          <select aria-label="Robot preset" value={robotId} onChange={(event) => onRobot(event.target.value as RobotPresetId)}>
             {robotPresets.map((robot) => (
               <option key={robot.id} value={robot.id}>{robot.name}</option>
             ))}
@@ -521,21 +563,16 @@ export function InputPanel({
         <div className="preload-control alliance-control">
           <span>Alliance color</span>
           <div className="select-wrap preload-select">
-            <select value={allianceColor} onChange={(event) => setAllianceColor(event.target.value as AllianceColor)}>
+            <select aria-label="Alliance color" value={allianceColor} onChange={(event) => setAllianceColor(event.target.value as AllianceColor)}>
               <option value="blue">Blue</option>
               <option value="red">Red</option>
             </select>
             <span>v</span>
           </div>
         </div>
-      </section>}
+      </SetupSection>}
 
-      {(!learningMode || experienceLevel === "advanced") && <section className="setup-section field-configurator">
-        <div className="config-title">
-          <div>
-            <label className="form-label">Field configuration</label>
-          </div>
-        </div>
+      {(!learningMode || experienceLevel === "advanced") && <SetupSection title="Field configuration" className="field-configurator">
         <div className="field-config-subtitle">Start position</div>
         <div className="dimension-controls start-pose-controls">
           <label>
@@ -555,7 +592,7 @@ export function InputPanel({
 
         <div className="field-config-subtitle">Coordinate system</div>
         <div className="select-wrap coordinate-system-select">
-          <select value={coordinateSystem} onChange={(event) => setCoordinateSystem(event.target.value as CoordinateSystem)}>
+          <select aria-label="Coordinate system" value={coordinateSystem} onChange={(event) => setCoordinateSystem(event.target.value as CoordinateSystem)}>
             <option value="corner">Corner origin - 0,0 at bottom left field corner</option>
             <option value="center">Center origin - 0,0 at field center</option>
           </select>
@@ -565,7 +602,7 @@ export function InputPanel({
         <div className="preload-control">
           <span>Artifacts in robot</span>
           <div className="select-wrap preload-select">
-            <select value={preloadCount} onChange={(event) => setPreloadCount(Number(event.target.value))}>
+            <select aria-label="Artifacts in robot" value={preloadCount} onChange={(event) => setPreloadCount(Number(event.target.value))}>
               <option value={0}>0</option>
               <option value={1}>1</option>
               <option value={2}>2</option>
@@ -599,7 +636,9 @@ export function InputPanel({
             ))}
           </div>
         )}
-      </section>}
+      </SetupSection>}
+
+      </div>
 
       <div className="input-actions">
         <button className="button run-button" onClick={onRun} disabled={running}>
@@ -618,12 +657,30 @@ export function InputPanel({
             Stop simulation
           </button>
         )}
+        {learningMode && (
+          <button className="button check-button" type="button" disabled={!canAnalyze || running} onClick={onCheckSolution}>
+            <span>✓</span>
+            Check solution
+          </button>
+        )}
         <button className="button analyze-button" disabled={!canAnalyze || running || analyzing} onClick={onAnalyze}>
           <span>*</span>
-          {analyzing ? "Analyzing run..." : learningMode && experienceLevel === "beginner" ? "Ask the coach what happened" : "Get AI feedback"}
+          {analyzing ? "Analyzing run..." : "Get AI feedback"}
         </button>
+        {learningMode && lessonCheck && (
+          <section className={`lesson-check-result ${lessonCheck.passed ? "passed" : "needs-work"}`} aria-live="polite">
+            <strong>{lessonCheck.headline}</strong>
+            <ul>
+              {lessonCheck.details.map((detail) => (
+                <li className={detail.passed ? "passed" : "needs-work"} key={detail.message}>
+                  <span>{detail.passed ? "✓" : "→"}</span>{detail.message}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {setupWarning && <p className="action-warning">{setupWarning}</p>}
-        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock AI feedback.</p>}
+        {!canAnalyze && !running && <p className="action-hint">Run the simulation to unlock {learningMode ? "solution checking and AI feedback" : "AI feedback"}.</p>}
       </div>
     </aside>
     {mounted && commandReferenceWindow ? createPortal(commandReferenceWindow, document.body) : null}

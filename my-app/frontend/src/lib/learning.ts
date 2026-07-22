@@ -1,6 +1,20 @@
-import type { AllianceColor, CoordinateSystem } from "@/lib/types";
+import type { AllianceColor, ArtifactRowId, CoordinateSystem } from "@/lib/types";
 
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
+
+export type LearningEvaluation = {
+  minDriveDistanceInches?: number;
+  finalPose?: { x: number; y: number; heading: number; positionTolerance: number; headingTolerance: number };
+  minCollectedArtifacts?: number;
+  minStoredArtifacts?: number;
+  minShotsAttempted?: number;
+  minScoredShots?: number;
+  requiredShot?: { targetRpm: number; rpmTolerance: number; angle: number; angleTolerance: number };
+  requireIntake?: boolean;
+  requireWaitForStart?: boolean;
+  requireShotAfterCollection?: boolean;
+  requireAllMotorsStopped?: boolean;
+};
 
 export type LearningScenario = {
   id: string;
@@ -15,7 +29,9 @@ export type LearningScenario = {
   preloadCount: number;
   allianceColor: AllianceColor;
   coordinateSystem: CoordinateSystem;
+  artifactRows: ArtifactRowId[];
   successCriteria: string[];
+  evaluation: LearningEvaluation;
 };
 
 export type ComplexityLevelDefinition = {
@@ -32,19 +48,18 @@ export type ComplexityLevelDefinition = {
   scenarios: LearningScenario[];
 };
 
-// Scenario poses are deliberate teaching setups rather than randomized or
-// official FTC starting locations. Related motor-control lessons reuse poses
-// so students can compare syntax without also changing the field problem.
+// startPose and evaluation.finalPose use RoboLab's internal field coordinates.
+// Student-facing driveToPosition() coordinates remain in the selected display system.
 export const complexityLevels: ComplexityLevelDefinition[] = [
   {
     id: "beginner",
     number: 1,
-    title: "Command Basics",
+    title: "Robot Foundations",
     accent: "cyan",
     syntaxLabel: "Simple robot commands",
-    description: "Build a sequence with readable movement, turning, intake, and shooter commands.",
+    description: "Learn the drivetrain and shooter separately before combining mechanisms into an autonomous routine.",
     syntaxNote: "RoboLab commands run from top to bottom. Each line describes one robot action.",
-    skills: ["Sequence actions", "Use inches and degrees", "Connect code to field movement"],
+    skills: ["Drive a repeatable path", "Aim the robot", "Spin up and fire a preload"],
     sandboxGoal: "Test simple robot commands on the DECODE field.",
     sandboxCode: `driveToPosition(72, 90, 145);
 spinFlywheel(2400);
@@ -54,47 +69,57 @@ shoot(60);`,
         id: "level-1-navigation",
         level: "beginner",
         number: "1A",
-        title: "Move and Face",
-        focus: "Sequence movement commands and finish at an absolute heading.",
-        description: "Use three simple commands to connect code order with the robot's path.",
-        goal: "Complete this exact path: drive forward 24 inches, strafe right 12 inches, then finish at a 90 degree heading.",
+        title: "Drive and Turn",
+        focus: "Build a repeatable drivetrain sequence and distinguish relative turns from field headings.",
+        description: "Connect command order, distance, strafing, and heading to the robot's path.",
+        goal: "Drive forward 24 inches, strafe right 12 inches, then finish facing 90 degrees.",
         starterCode: `driveForward(24);
 // TODO: strafe right 12 inches
-// TODO: finish at a 90 degree heading`,
-        startPose: { x: 24, y: 120, heading: 0 },
+// TODO: use turnTo() to finish at the field heading of 90 degrees`,
+        startPose: { x: 72, y: 72, heading: 0 },
         preloadCount: 0,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["First move forward 24 inches", "Then strafe right 12 inches", "Finish at a 90 degree heading"],
+        artifactRows: [],
+        successCriteria: ["Drive forward 24 inches", "Strafe right 12 inches", "Finish at a 90-degree field heading"],
+        evaluation: {
+          minDriveDistanceInches: 34,
+          finalPose: { x: 96, y: 84, heading: 90, positionTolerance: 2, headingTolerance: 3 },
+        },
       },
       {
         id: "level-1-preload",
         level: "beginner",
         number: "1B",
-        title: "Score the Preload",
-        focus: "Coordinate position, flywheel speed, and one scored shot.",
-        description: "Build a short scoring sequence from readable high-level commands.",
-        goal: "Score the single preloaded artifact in the blue classifier: drive to (72, 90) facing 145 degrees, spin to 2400 RPM, and fire once at 60 degrees.",
-        starterCode: `driveToPosition(72, 90, 145);
-// TODO: spin the flywheel to the target RPM
-// TODO: fire the preload at the target angle`,
-        startPose: { x: 72, y: 72, heading: 90 },
+        title: "Spin Up and Shoot",
+        focus: "Learn the shooter from a fixed, proven scoring pose.",
+        description: "Keep the drivetrain out of the problem while you learn flywheel speed, launch angle, and scoring telemetry.",
+        goal: "From the ready shooting pose, spin the flywheel to 2400 RPM and score the single preload at 60 degrees.",
+        starterCode: `// TODO: spin the flywheel to 2400 RPM
+// TODO: shoot the preload at 60 degrees`,
+        startPose: { x: 72, y: 54, heading: 145 },
         preloadCount: 1,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["Reach the specified shooting pose", "Fire exactly one preload at 2400 RPM and 60 degrees", "Record one blue classified shot"],
+        artifactRows: [],
+        successCriteria: ["Spin the flywheel to 2400 RPM", "Fire once at 60 degrees", "Record one blue classified shot"],
+        evaluation: {
+          minShotsAttempted: 1,
+          minScoredShots: 1,
+          requiredShot: { targetRpm: 2400, rpmTolerance: 100, angle: 60, angleTolerance: 2 },
+        },
       },
     ],
   },
   {
     id: "intermediate",
     number: 2,
-    title: "Motor Control",
+    title: "Game Piece Control",
     accent: "purple",
     syntaxLabel: "FTC-style hardware methods",
-    description: "Control individual motors with setPower(), keep power active with wait(), and stop mechanisms explicitly.",
-    syntaxNote: "This level mirrors common FTC hardware calls while keeping timing and scoring helpers approachable.",
-    skills: ["Set mecanum motor power", "Manage mechanism state", "Use timed open-loop control"],
+    description: "Use drivetrain and intake motors together to acquire an artifact and move it under control.",
+    syntaxNote: "Motor power remains active until another call changes it, just like open-loop FTC hardware control.",
+    skills: ["Run the intake motor", "Drive into a pickup", "Stop and retreat with the artifact"],
     sandboxGoal: "Experiment with individual FTC-style motor power calls and explicit timing.",
     sandboxCode: `frontLeftDrive.setPower(0.5);
 frontRightDrive.setPower(0.5);
@@ -107,52 +132,73 @@ stopDriveMotors();`,
         id: "level-2-timed-drive",
         level: "intermediate",
         number: "2A",
-        title: "Timed Motor Drive",
-        focus: "Control all four drive motors with power, elapsed time, and an explicit stop.",
-        description: "Replace a high-level drive command with open-loop drivetrain control.",
-        goal: "Power all four drive motors at 0.5 for exactly 1.0 second, then stop every drive motor.",
-        starterCode: `frontLeftDrive.setPower(0.5);
-frontRightDrive.setPower(0.5);
-// TODO: set both rear drive motors to the same power
-wait(1);
-// TODO: stop the drivetrain`,
-        startPose: { x: 48, y: 108, heading: 0 },
+        title: "Intake on the Move",
+        focus: "Coordinate an intake motor with a timed drivetrain approach.",
+        description: "The robot starts lined up with a center-row artifact. Drive straight forward with the intake running, then stop every motor.",
+        goal: "From the lined-up start, run the intake and drive straight forward at 0.5 power for 0.5 seconds to collect an artifact, then stop all motors.",
+        starterCode: `// TODO: set the intake motor power to 1
+
+// TODO: set all four drive motor powers to 0.5, then wait 0.5 seconds
+
+// TODO: stop every motor`,
+        startPose: { x: 52, y: 84, heading: 180 },
         preloadCount: 0,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["Set all four drive motors to 0.5", "Keep that power active for wait(1)", "End with all drive motors stopped"],
+        artifactRows: ["topCenter"],
+        successCriteria: ["Run the intake while driving straight forward", "Collect the lined-up artifact", "Finish with every motor stopped"],
+        evaluation: {
+          minDriveDistanceInches: 9,
+          minCollectedArtifacts: 1,
+          minStoredArtifacts: 1,
+          requireIntake: true,
+          requireAllMotorsStopped: true,
+        },
       },
       {
         id: "level-2-flywheel",
         level: "intermediate",
         number: "2B",
-        title: "Power, Wait, Fire",
-        focus: "Coordinate mirrored flywheel power, turret-hood positioning, spin-up time, and a safe shutdown.",
-        description: "Control the shooter motors and hood separately before triggering the feeder.",
-        goal: "Score the single preload: set the left and right flywheels to 0.4 and -0.4, move the turret hood to 60 degrees, wait 1.5 seconds, call shoot(), then stop all motors.",
-        starterCode: `leftFlywheel.setPower(0.4);
-// TODO: power the mirrored right flywheel
-// TODO: move the turret hood to 60 degrees
-wait(1.5);
-// TODO: fire using the current hood angle
-// TODO: stop all motors`,
-        startPose: { x: 72, y: 54, heading: 145 },
-        preloadCount: 1,
+        title: "Collect and Retreat",
+        focus: "Turn a pickup into a controlled autonomous cycle segment.",
+        description: "Collect from the center row, reverse away from traffic, and retain the artifact for a later shot.",
+        goal: "Collect at least one artifact with the intake and a 0.5-power approach for 0.5 seconds, reverse at -0.5 power for 0.5 seconds, then stop all motors with an artifact stored.",
+        starterCode: `intake.setPower(1);
+frontLeftDrive.setPower(0.5);
+frontRightDrive.setPower(0.5);
+rearLeftDrive.setPower(0.5);
+rearRightDrive.setPower(0.5);
+wait(0.5);
+
+// TODO: reverse all four drive motors at -0.5
+// TODO: keep reversing for 0.5 seconds
+// TODO: stop every motor`,
+        startPose: { x: 52, y: 84, heading: 180 },
+        preloadCount: 0,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["Set the flywheels to mirrored 0.4 and -0.4 power", "Set the turret hood to 60 degrees and wait 1.5 seconds before firing", "Call shoot() once and end with all motors stopped"],
+        artifactRows: ["topCenter"],
+        successCriteria: ["Collect an artifact during the forward approach", "Reverse away while keeping the artifact stored", "Finish with every motor stopped"],
+        evaluation: {
+          minDriveDistanceInches: 18,
+          finalPose: { x: 52, y: 84, heading: 180, positionTolerance: 3, headingTolerance: 3 },
+          minCollectedArtifacts: 1,
+          minStoredArtifacts: 1,
+          requireIntake: true,
+          requireAllMotorsStopped: true,
+        },
       },
     ],
   },
   {
     id: "advanced",
     number: 3,
-    title: "FTC Java Structure",
+    title: "FTC Autonomous Routines",
     accent: "amber",
     syntaxLabel: "LinearOpMode-style Java",
-    description: "Place supported hardware actions inside an FTC Java-shaped autonomous class with waitForStart() and sleep().",
+    description: "Combine drivetrain, intake, and shooter skills inside an FTC-shaped autonomous program.",
     syntaxNote: "RoboLab executes a focused Java training subset; it does not compile the full FTC SDK or arbitrary Java.",
-    skills: ["Read LinearOpMode structure", "Use waitForStart()", "Express timing in milliseconds"],
+    skills: ["Gate actions with waitForStart()", "Build a preload auto", "Complete a collect-and-score cycle"],
     sandboxGoal: "Practice a LinearOpMode-style autonomous routine using supported RoboLab hardware actions.",
     sandboxCode: `@Autonomous(name = "RoboLab Auto")
 public class RoboLabAuto extends LinearOpMode {
@@ -173,55 +219,82 @@ public class RoboLabAuto extends LinearOpMode {
         id: "level-3-java-drive",
         level: "advanced",
         number: "3A",
-        title: "Java Autonomous Drive",
-        focus: "Structure a timed drivetrain sequence inside runOpMode().",
-        description: "Translate the Level 2 motor routine into RoboLab's FTC Java-shaped subset.",
-        goal: "Write a LinearOpMode-style autonomous that calls waitForStart(), powers all four drive motors at 0.45, calls sleep(1000), then stops the drivetrain.",
-        starterCode: `@Autonomous(name = "Timed Drive")
-public class TimedDriveAuto extends LinearOpMode {
-    @Override
-    public void runOpMode() {
-        waitForStart();
-
-        frontLeftDrive.setPower(0.45);
-        // TODO: set the other three drive motors
-        sleep(1000);
-        // TODO: stop the drivetrain
-    }
-}`,
-        startPose: { x: 48, y: 108, heading: 0 },
-        preloadCount: 0,
-        allianceColor: "blue",
-        coordinateSystem: "corner",
-        successCriteria: ["Put the sequence inside runOpMode() after waitForStart()", "Set all four drive motors to 0.45", "Use sleep(1000) and then stop the drivetrain"],
-      },
-      {
-        id: "level-3-java-preload",
-        level: "advanced",
-        number: "3B",
-        title: "Java Preload Auto",
-        focus: "Combine FTC Java structure with separate hood positioning and feeder control.",
-        description: "Use start gating, flywheel power, turret-hood positioning, millisecond timing, firing, and shutdown together.",
-        goal: "Write a LinearOpMode-style autonomous that waits for start, powers the flywheels at 0.4 and -0.4, moves the turret hood to 60 degrees, sleeps 1500 milliseconds, calls shoot(), then stops all motors.",
+        title: "Preload Autonomous",
+        focus: "Combine movement and shooting inside runOpMode().",
+        description: "Build a realistic first autonomous: wait for start, drive to a known pose, spin up, score, and shut down.",
+        goal: "After waitForStart(), drive to (72, 90) facing 145 degrees, power the mirrored flywheels at 0.4 and -0.4, set the hood to 60 degrees, wait 1500 milliseconds, score the preload, and stop all motors.",
         starterCode: `@Autonomous(name = "Preload Auto")
 public class PreloadAuto extends LinearOpMode {
     @Override
     public void runOpMode() {
         waitForStart();
 
-        leftFlywheel.setPower(0.4);
-        // TODO: power the mirrored right flywheel
-        // TODO: move the turret hood to 60 degrees
-        sleep(1500);
-        // TODO: fire using the current hood angle
-        // TODO: stop all motors
+        driveToPosition(72, 90, 145);
+        // TODO: power the flywheels at 0.4 and -0.4
+        // TODO: set the hood to 60 degrees and sleep for spin-up
+        // TODO: fire the preload
+        // TODO: stop every motor
     }
 }`,
-        startPose: { x: 72, y: 54, heading: 145 },
+        startPose: { x: 72, y: 72, heading: 90 },
         preloadCount: 1,
         allianceColor: "blue",
         coordinateSystem: "corner",
-        successCriteria: ["Put the sequence inside runOpMode() after waitForStart()", "Use mirrored flywheel power, setHoodAngle(60), and sleep(1500)", "Call shoot() once and stop all motors"],
+        artifactRows: [],
+        successCriteria: ["Call waitForStart() before robot actions", "Move to the shooting pose and score one preload", "Finish with every motor stopped"],
+        evaluation: {
+          minDriveDistanceInches: 16,
+          finalPose: { x: 72, y: 54, heading: 145, positionTolerance: 2, headingTolerance: 3 },
+          minShotsAttempted: 1,
+          minScoredShots: 1,
+          requiredShot: { targetRpm: 2400, rpmTolerance: 100, angle: 60, angleTolerance: 2 },
+          requireWaitForStart: true,
+          requireAllMotorsStopped: true,
+        },
+      },
+      {
+        id: "level-3-java-preload",
+        level: "advanced",
+        number: "3B",
+        title: "Full Collect-and-Score Cycle",
+        focus: "Combine every prior lesson into one complete autonomous cycle.",
+        description: "Acquire a field artifact, return to the proven launch pose, score it, and leave the robot safe.",
+        goal: "After waitForStart(), run the intake and drive to (39, 60) facing 180 degrees to collect an artifact. Return to (72, 90) facing 145 degrees, power the mirrored flywheels at 0.4 and -0.4, set the hood to 60 degrees, wait 1500 milliseconds, score, and stop all motors.",
+        starterCode: `@Autonomous(name = "Cycle Auto")
+public class CycleAuto extends LinearOpMode {
+    @Override
+    public void runOpMode() {
+        waitForStart();
+
+        intake.setPower(1);
+        // TODO: drive to (39, 60) facing 180 degrees
+        intake.setPower(0);
+
+        // TODO: return to (72, 90) facing 145 degrees
+        // TODO: power the flywheels at 0.4 and -0.4
+        // TODO: set the hood to 60 degrees and sleep for spin-up
+        // TODO: fire the collected artifact
+        // TODO: stop every motor
+    }
+}`,
+        startPose: { x: 72, y: 54, heading: 145 },
+        preloadCount: 0,
+        allianceColor: "blue",
+        coordinateSystem: "corner",
+        artifactRows: ["topCenter"],
+        successCriteria: ["Collect at least one field artifact with the intake", "Return to the proven shooting pose", "Score a collected artifact and stop every motor"],
+        evaluation: {
+          minDriveDistanceInches: 80,
+          finalPose: { x: 72, y: 54, heading: 145, positionTolerance: 2, headingTolerance: 3 },
+          minCollectedArtifacts: 1,
+          minShotsAttempted: 1,
+          minScoredShots: 1,
+          requiredShot: { targetRpm: 2400, rpmTolerance: 100, angle: 60, angleTolerance: 2 },
+          requireIntake: true,
+          requireWaitForStart: true,
+          requireShotAfterCollection: true,
+          requireAllMotorsStopped: true,
+        },
       },
     ],
   },

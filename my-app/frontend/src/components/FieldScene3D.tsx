@@ -56,7 +56,9 @@ function clampBodyVelocity(body: RapierRigidBody, maxSpeed = MAX_FREE_ARTIFACT_S
   body.setLinvel({ x: velocity.x * scale, y: velocity.y * scale, z: velocity.z * scale }, true);
 }
 
-const artifactSpecs: ArtifactSpec[] = [
+// Source coordinates follow the DECODE asset axes; normalize them once so
+// rendering, collision, and telemetry share the simulator's field axes.
+const artifactSpecs: ArtifactSpec[] = ([
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
   { id: "top-loading-green", row: "topLoading", x: 133.75, y: 138, color: "green" },
   { id: "top-loading-purple-right", row: "topLoading", x: 140.75, y: 138, color: "purple" },
@@ -81,7 +83,11 @@ const artifactSpecs: ArtifactSpec[] = [
   { id: "bottom-loading-purple-left", row: "bottomLoading", x: 126.75, y: 6, color: "purple" },
   { id: "bottom-loading-green", row: "bottomLoading", x: 133.75, y: 6, color: "green" },
   { id: "bottom-loading-purple-right", row: "bottomLoading", x: 140.75, y: 6, color: "purple" },
-];
+] satisfies ArtifactSpec[]).map((artifact) => ({
+  ...artifact,
+  x: FIELD_INCHES - artifact.y,
+  y: artifact.x,
+}));
 
 function fieldPosition(x: number, y: number): [number, number, number] {
   return [(x - 72) * INCHES_TO_METERS, 0, (y - 72) * INCHES_TO_METERS];
@@ -289,13 +295,13 @@ function RobotTrail({ trail }: { trail: TelemetryFrame[] }) {
 
 function artifactWorldPosition(artifact: Pick<ArtifactSpec, "x" | "y">, y = 0): [number, number, number] {
   const [x, , z] = fieldPosition(artifact.x, artifact.y);
-  return [-z, y, x];
+  return [x, y, z];
 }
 
 function fieldCoordinatesFromWorld(translation: { x: number; z: number }) {
   return {
-    x: translation.z / INCHES_TO_METERS + FIELD_INCHES / 2,
-    y: FIELD_INCHES / 2 - translation.x / INCHES_TO_METERS,
+    x: translation.x / INCHES_TO_METERS + FIELD_INCHES / 2,
+    y: translation.z / INCHES_TO_METERS + FIELD_INCHES / 2,
   };
 }
 

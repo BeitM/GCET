@@ -3,7 +3,8 @@ import type { MotorId, RobotMotorPowers } from "@/lib/motors";
 export type RobotCommand =
   | { type: "drive"; direction: "forward" | "backward" | "left" | "right"; distance: number }
   | { type: "driveTo"; x: number; y: number; heading?: number }
-  | { type: "turn"; heading: number }
+  | { type: "turn"; degrees: number }
+  | { type: "turnTo"; heading: number }
   | { type: "spinFlywheel"; rpm: number }
   | { type: "setHoodAngle"; angle: number }
   | { type: "shoot"; angle?: number }
@@ -92,7 +93,8 @@ export function parseRobotCode(source: string): RobotCommand[] {
       if (name === "driveleft" || name === "strafeleft" || name === "move_left") return { type: "drive", direction: "left", distance } satisfies RobotCommand;
       if (name === "driveright" || name === "straferight" || name === "move_right") return { type: "drive", direction: "right", distance } satisfies RobotCommand;
       if (name === "drivetoposition" && args.length >= 2) return { type: "driveTo", x: args[0], y: args[1], heading: args.length >= 3 ? args[2] : undefined } satisfies RobotCommand;
-      if (name === "turn") return { type: "turn", heading: normalizeHeading(first || 0) } satisfies RobotCommand;
+      if (name === "turn") return { type: "turn", degrees: first || 0 } satisfies RobotCommand;
+      if (name === "turnto") return { type: "turnTo", heading: normalizeHeading(first || 0) } satisfies RobotCommand;
       if (name === "spinflywheel") return { type: "spinFlywheel", rpm: clamp(first || 0, 0, 6000) } satisfies RobotCommand;
       if (name === "sethoodangle" && Number.isFinite(first)) return { type: "setHoodAngle", angle: clamp(first, 20, 70) } satisfies RobotCommand;
       if (name === "shoot" && Number.isFinite(first)) return { type: "shoot", angle: clamp(first, 20, 70) } satisfies RobotCommand;

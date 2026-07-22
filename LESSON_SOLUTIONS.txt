@@ -5,68 +5,56 @@ Instructor/reference copy. The in-app lesson starters intentionally omit
 required commands so students can complete each objective themselves.
 
 
-LEVEL 1 - COMMAND BASICS
-------------------------
+LEVEL 1 - ROBOT FOUNDATIONS
+---------------------------
 
-Lesson 1A - Move and Face
+Lesson 1A - Drive and Turn
 
 driveForward(24);
 driveRight(12);
-turn(90);
+turnTo(90);
 
 
-Lesson 1B - Score the Preload
+Lesson 1B - Spin Up and Shoot
 
-driveToPosition(72, 90, 145);
 spinFlywheel(2400);
 shoot(60);
 
 
-LEVEL 2 - MOTOR CONTROL
------------------------
+LEVEL 2 - GAME PIECE CONTROL
+----------------------------
 
-Lesson 2A - Timed Motor Drive
+Lesson 2A - Intake on the Move
 
+intake.setPower(1);
 frontLeftDrive.setPower(0.5);
 frontRightDrive.setPower(0.5);
 rearLeftDrive.setPower(0.5);
 rearRightDrive.setPower(0.5);
-wait(1);
-stopDriveMotors();
-
-
-Lesson 2B - Power, Wait, Fire
-
-leftFlywheel.setPower(0.4);
-rightFlywheel.setPower(-0.4);
-setHoodAngle(60);
-wait(1.5);
-shoot();
+wait(0.5);
 stopAllMotors();
 
 
-LEVEL 3 - FTC JAVA STRUCTURE
-----------------------------
+Lesson 2B - Collect and Retreat
 
-Lesson 3A - Java Autonomous Drive
-
-@Autonomous(name = "Timed Drive")
-public class TimedDriveAuto extends LinearOpMode {
-    @Override
-    public void runOpMode() {
-        waitForStart();
-
-        frontLeftDrive.setPower(0.45);
-        frontRightDrive.setPower(0.45);
-        rearLeftDrive.setPower(0.45);
-        rearRightDrive.setPower(0.45);
-        sleep(1000);
-        stopDriveMotors();
-    }
-}
+intake.setPower(1);
+frontLeftDrive.setPower(0.5);
+frontRightDrive.setPower(0.5);
+rearLeftDrive.setPower(0.5);
+rearRightDrive.setPower(0.5);
+wait(0.5);
+frontLeftDrive.setPower(-0.5);
+frontRightDrive.setPower(-0.5);
+rearLeftDrive.setPower(-0.5);
+rearRightDrive.setPower(-0.5);
+wait(0.5);
+stopAllMotors();
 
 
-Lesson 3B - Java Preload Auto
+LEVEL 3 - FTC AUTONOMOUS ROUTINES
+---------------------------------
+
+Lesson 3A - Preload Autonomous
 
 @Autonomous(name = "Preload Auto")
 public class PreloadAuto extends LinearOpMode {
@@ -74,6 +62,30 @@ public class PreloadAuto extends LinearOpMode {
     public void runOpMode() {
         waitForStart();
 
+        driveToPosition(72, 90, 145);
+        leftFlywheel.setPower(0.4);
+        rightFlywheel.setPower(-0.4);
+        setHoodAngle(60);
+        sleep(1500);
+        shoot();
+        stopAllMotors();
+    }
+}
+
+
+Lesson 3B - Full Collect-and-Score Cycle
+
+@Autonomous(name = "Cycle Auto")
+public class CycleAuto extends LinearOpMode {
+    @Override
+    public void runOpMode() {
+        waitForStart();
+
+        intake.setPower(1);
+        driveToPosition(39, 60, 180);
+        intake.setPower(0);
+
+        driveToPosition(72, 90, 145);
         leftFlywheel.setPower(0.4);
         rightFlywheel.setPower(-0.4);
         setHoodAngle(60);

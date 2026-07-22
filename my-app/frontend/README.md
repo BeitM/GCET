@@ -34,7 +34,13 @@ Copy `.env.example` to `.env.local`. Leave `OPENAI_API_KEY=mock` for determinist
 
 ## Learning levels
 
-Autonomous Sandbox provides a switcher for three code-complexity levels: simple robot commands, FTC-style motor power and timing calls, and a supported `LinearOpMode`-shaped Java subset. Structured Learning provides two scenarios at every level, locks the editor complexity to the chosen level, starts from an intentionally incomplete scaffold, and offers sequential navigation across all six lessons. It sends the scenario focus and success criteria to AI analysis so advice stays appropriate for the current objective and syntax. The Java-shaped level is instructional and does not compile arbitrary Java or the full FTC SDK.
+Autonomous Sandbox provides a switcher for three code-complexity levels: simple robot commands, FTC-style motor power and timing calls, and a supported `LinearOpMode`-shaped Java subset. Structured Learning uses those interfaces for a six-lesson FTC skill sequence: movement, fixed-pose shooting, intake while driving, collection and retreat, preload autonomous, and a full collect-and-score cycle. Each lesson locks the appropriate code complexity, starts from an intentionally incomplete scaffold, configures its field artifacts, and provides sequential navigation.
+
+After a run, Learning offers a deterministic browser-local **Check solution** action and a separate optional **Get AI feedback** action. Sandbox offers only **Get AI feedback**. Analysis is never requested automatically, and only the local solution check marks a lesson complete. The Java-shaped level is instructional and does not compile arbitrary Java or the full FTC SDK.
+
+For simple Level 1 steering, `turn(degrees)` rotates relative to the robot's current heading and `turnTo(heading)` targets an absolute field heading.
+
+Parameterized editor completions insert empty calls such as `driveRight()` and place the caret inside the parentheses. Concrete values shown in the Commands reference are examples, not autocomplete defaults.
 
 ## Prototype Status
 

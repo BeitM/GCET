@@ -5,9 +5,11 @@ import {
   useState,
   type ChangeEvent,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactNode,
   type SyntheticEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import type { ControlMode } from "@/lib/types";
 
 export type RobotCodeCompletion = {
@@ -30,10 +32,21 @@ type RobotCodeEditorProps = {
 };
 
 type Selection = { start: number; end: number };
+type FloatingEditorRect = { x: number; y: number; width: number; height: number };
 
 const INDENT = "    ";
 const COMPACT_LINE_HEIGHT = 20;
 const EXPANDED_LINE_HEIGHT = 24;
+const FLOATING_EDITOR_DEFAULT_WIDTH = 860;
+const FLOATING_EDITOR_DEFAULT_HEIGHT = 560;
+const FLOATING_EDITOR_MIN_WIDTH = 560;
+const FLOATING_EDITOR_MIN_HEIGHT = 340;
+const FLOATING_EDITOR_MARGIN = 12;
+const COMPLETION_MENU_MAX_HEIGHT = 226;
+const COMPLETION_MENU_HEADER_HEIGHT = 30;
+const COMPLETION_MENU_ITEM_HEIGHT = 43;
+const COMPLETION_MENU_GAP = 6;
+const COMPLETION_MENU_EDGE = 8;
 
 const JAVA_KEYWORDS = new Set([
   "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const",
@@ -49,6 +62,49 @@ const TOKEN_PATTERN = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'
 function getCompletionPrefix(value: string, caret: number) {
   const beforeCaret = value.slice(0, caret);
   return beforeCaret.match(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.?$/)?.[0] ?? "";
+}
+
+function isCodeCompletionContext(value: string, caret: number) {
+  let context: "code" | "line-comment" | "block-comment" | "single-quote" | "double-quote" = "code";
+
+  for (let index = 0; index < caret; index++) {
+    const character = value[index];
+    const nextCharacter = value[index + 1];
+
+    if (context === "line-comment") {
+      if (character === "\n") context = "code";
+      continue;
+    }
+    if (context === "block-comment") {
+      if (character === "*" && nextCharacter === "/") {
+        context = "code";
+        index++;
+      }
+      continue;
+    }
+    if (context === "single-quote" || context === "double-quote") {
+      if (character === "\\") {
+        index++;
+        continue;
+      }
+      if ((context === "single-quote" && character === "'") || (context === "double-quote" && character === '"')) context = "code";
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "/") {
+      context = "line-comment";
+      index++;
+    } else if (character === "/" && nextCharacter === "*") {
+      context = "block-comment";
+      index++;
+    } else if (character === "'") {
+      context = "single-quote";
+    } else if (character === '"') {
+      context = "double-quote";
+    }
+  }
+
+  return context === "code";
 }
 
 function highlightCode(value: string, commandNames: Set<string>): ReactNode[] {
@@ -94,21 +150,6 @@ function getLineAndColumn(value: string, caret: number) {
   return { line: lines.length, column: lines.at(-1)?.length ?? 0 };
 }
 
-function getSearchMatches(value: string, query: string) {
-  if (!query) return [] as Selection[];
-  const matches: Selection[] = [];
-  const haystack = value.toLocaleLowerCase();
-  const needle = query.toLocaleLowerCase();
-  let start = 0;
-  while (start <= haystack.length - needle.length) {
-    const index = haystack.indexOf(needle, start);
-    if (index < 0) break;
-    matches.push({ start: index, end: index + query.length });
-    start = index + Math.max(1, query.length);
-  }
-  return matches;
-}
-
 export function RobotCodeEditor({
   id,
   value,
@@ -120,21 +161,23 @@ export function RobotCodeEditor({
   onToggleCommandReference,
 }: RobotCodeEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const findInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const editorViewportRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
+  const resizeStart = useRef<{ pointerX: number; pointerY: number; width: number; height: number } | null>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
   const [selection, setSelection] = useState<Selection>({ start: 0, end: 0 });
   const [scroll, setScroll] = useState({ top: 0, left: 0 });
   const [focused, setFocused] = useState(false);
   const [forceSuggestions, setForceSuggestions] = useState(false);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
-  const [findOpen, setFindOpen] = useState(false);
-  const [findQuery, setFindQuery] = useState("");
-  const [findIndex, setFindIndex] = useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 260, height: 260 });
   const [expanded, setExpanded] = useState(false);
+  const [floatingRect, setFloatingRect] = useState<FloatingEditorRect>({ x: 48, y: 48, width: FLOATING_EDITOR_DEFAULT_WIDTH, height: FLOATING_EDITOR_DEFAULT_HEIGHT });
 
   const prefix = getCompletionPrefix(value, selection.start);
+  const completionAllowed = isCodeCompletionContext(value, selection.start);
   const commandNames = useMemo(() => new Set(completions.flatMap((completion) => {
     const name = completion.label.slice(0, completion.label.indexOf("(") < 0 ? undefined : completion.label.indexOf("("));
     const pieces = name.split(".");
@@ -142,7 +185,7 @@ export function RobotCodeEditor({
   })), [completions]);
   const highlightedCode = useMemo(() => highlightCode(value, commandNames), [commandNames, value]);
   const suggestions = useMemo(() => {
-    if (!focused || suggestionsDismissed || (!forceSuggestions && prefix.length === 0)) return [];
+    if (!focused || !completionAllowed || suggestionsDismissed || (!forceSuggestions && prefix.length === 0)) return [];
     const query = prefix.toLocaleLowerCase();
     return completions
       .filter((completion) => {
@@ -155,10 +198,8 @@ export function RobotCodeEditor({
         return leftStarts - rightStarts || left.label.localeCompare(right.label);
       })
       .slice(0, 8);
-  }, [completions, focused, forceSuggestions, prefix, suggestionsDismissed]);
-  const findMatches = useMemo(() => getSearchMatches(value, findQuery), [findQuery, value]);
+  }, [completionAllowed, completions, focused, forceSuggestions, prefix, suggestionsDismissed]);
   const resolvedActiveSuggestion = Math.min(activeSuggestion, Math.max(0, suggestions.length - 1));
-  const resolvedFindIndex = Math.min(findIndex, Math.max(0, findMatches.length - 1));
   const cursorPosition = getLineAndColumn(value, selection.start);
   const lineCount = Math.max(1, value.split("\n").length);
   const currentLine = value.slice(0, selection.start).split("\n").at(-1) ?? "";
@@ -166,10 +207,30 @@ export function RobotCodeEditor({
   const editorLineHeight = expanded ? EXPANDED_LINE_HEIGHT : COMPACT_LINE_HEIGHT;
   const editorCharacterWidth = expanded ? 8.4 : 7.2;
   const editorPadding = expanded ? 20 : 14;
-  const desiredMenuTop = editorPadding + (cursorPosition.line - 1) * editorLineHeight - scroll.top + editorLineHeight + 3;
-  const completionTop = desiredMenuTop + 190 > viewportSize.height
-    ? Math.max(8, desiredMenuTop - 220)
-    : desiredMenuTop;
+  const activeLineTop = editorPadding + (cursorPosition.line - 1) * editorLineHeight - scroll.top;
+  const activeLineBottom = activeLineTop + editorLineHeight;
+  const completionSpaceAbove = Math.max(0, activeLineTop - COMPLETION_MENU_EDGE - COMPLETION_MENU_GAP);
+  const completionSpaceBelow = Math.max(0, viewportSize.height - activeLineBottom - COMPLETION_MENU_EDGE - COMPLETION_MENU_GAP);
+  const completionDesiredHeight = Math.min(
+    COMPLETION_MENU_MAX_HEIGHT,
+    COMPLETION_MENU_HEADER_HEIGHT + suggestions.length * COMPLETION_MENU_ITEM_HEIGHT,
+  );
+  const completionMaxHeight = Math.min(
+    completionDesiredHeight,
+    Math.max(1, viewportSize.height - COMPLETION_MENU_EDGE * 2),
+  );
+  const completionBelow = completionSpaceBelow >= completionMaxHeight
+    || (completionSpaceAbove < completionMaxHeight && completionSpaceBelow >= completionSpaceAbove);
+  const preferredCompletionTop = completionBelow
+    ? activeLineBottom + COMPLETION_MENU_GAP
+    : activeLineTop - COMPLETION_MENU_GAP - completionMaxHeight;
+  const completionTop = Math.max(
+    COMPLETION_MENU_EDGE,
+    Math.min(
+      preferredCompletionTop,
+      Math.max(COMPLETION_MENU_EDGE, viewportSize.height - COMPLETION_MENU_EDGE - completionMaxHeight),
+    ),
+  );
   const completionLeft = Math.max(8, Math.min(
     editorPadding + displayColumn * editorCharacterWidth - scroll.left,
     Math.max(8, viewportSize.width - 250),
@@ -186,15 +247,22 @@ export function RobotCodeEditor({
     });
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, []);
+  }, [expanded]);
 
   useEffect(() => {
     if (!expanded) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    const keepWindowInViewport = () => setFloatingRect((current) => {
+      const width = Math.min(current.width, Math.max(320, window.innerWidth - FLOATING_EDITOR_MARGIN * 2));
+      const height = Math.min(current.height, Math.max(280, window.innerHeight - FLOATING_EDITOR_MARGIN * 2));
+      return {
+        width,
+        height,
+        x: Math.min(Math.max(FLOATING_EDITOR_MARGIN, current.x), Math.max(FLOATING_EDITOR_MARGIN, window.innerWidth - width - FLOATING_EDITOR_MARGIN)),
+        y: Math.min(Math.max(FLOATING_EDITOR_MARGIN, current.y), Math.max(FLOATING_EDITOR_MARGIN, window.innerHeight - height - FLOATING_EDITOR_MARGIN)),
+      };
+    });
+    window.addEventListener("resize", keepWindowInViewport);
+    return () => window.removeEventListener("resize", keepWindowInViewport);
   }, [expanded]);
 
   const restoreSelection = (start: number, end = start) => {
@@ -217,9 +285,25 @@ export function RobotCodeEditor({
     const nextSelection = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd };
     if (nextSelection.start !== selection.start || nextSelection.end !== selection.end) {
       setSuggestionsDismissed(false);
+      setActiveSuggestion(0);
     }
     setSelection(nextSelection);
-    setActiveSuggestion(0);
+  };
+
+  const handleEditorFocus = () => {
+    if (blurTimeoutRef.current !== null) {
+      window.clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    setFocused(true);
+  };
+
+  const handleEditorBlur = () => {
+    if (blurTimeoutRef.current !== null) window.clearTimeout(blurTimeoutRef.current);
+    blurTimeoutRef.current = window.setTimeout(() => {
+      setFocused(false);
+      blurTimeoutRef.current = null;
+    }, 100);
   };
 
   const acceptSuggestion = (completion: RobotCodeCompletion) => {
@@ -287,43 +371,82 @@ export function RobotCodeEditor({
     applyEdit(nextValue, Math.max(lineStart, selection.start + firstDelta), Math.max(lineStart, selection.end + totalDelta));
   };
 
-  const openFind = () => {
-    setFindOpen(true);
-    window.requestAnimationFrame(() => {
-      findInputRef.current?.focus();
-      findInputRef.current?.select();
-    });
-  };
-
-  const closeFind = () => {
-    setFindOpen(false);
-    restoreSelection(selection.start, selection.end);
-  };
-
   const toggleExpanded = () => {
+    if (!expanded) {
+      const width = Math.min(FLOATING_EDITOR_DEFAULT_WIDTH, Math.max(320, window.innerWidth - 96));
+      const height = Math.min(FLOATING_EDITOR_DEFAULT_HEIGHT, Math.max(280, window.innerHeight - 96));
+      setFloatingRect({
+        width,
+        height,
+        x: Math.max(FLOATING_EDITOR_MARGIN, (window.innerWidth - width) / 2),
+        y: Math.max(FLOATING_EDITOR_MARGIN, (window.innerHeight - height) / 2),
+      });
+    }
     setExpanded((current) => !current);
     restoreSelection(selection.start, selection.end);
   };
 
-  const goToFindMatch = (direction: 1 | -1) => {
-    if (findMatches.length === 0) return;
-    const nextIndex = (resolvedFindIndex + direction + findMatches.length) % findMatches.length;
-    setFindIndex(nextIndex);
-    const match = findMatches[nextIndex];
-    restoreSelection(match.start, match.end);
+  const beginWindowDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!expanded || window.innerWidth <= 700 || (event.target as HTMLElement).closest("button")) return;
+    const rect = editorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragStart.current = { pointerX: event.clientX, pointerY: event.clientY, x: rect.left, y: rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const dragWindow = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragStart.current) return;
+    const rect = editorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = dragStart.current.x + event.clientX - dragStart.current.pointerX;
+    const y = dragStart.current.y + event.clientY - dragStart.current.pointerY;
+    setFloatingRect((current) => ({
+      ...current,
+      x: Math.min(Math.max(FLOATING_EDITOR_MARGIN, x), Math.max(FLOATING_EDITOR_MARGIN, window.innerWidth - rect.width - FLOATING_EDITOR_MARGIN)),
+      y: Math.min(Math.max(FLOATING_EDITOR_MARGIN, y), Math.max(FLOATING_EDITOR_MARGIN, window.innerHeight - rect.height - FLOATING_EDITOR_MARGIN)),
+    }));
+  };
+
+  const endWindowDrag = () => {
+    dragStart.current = null;
+  };
+
+  const beginWindowResize = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!expanded || window.innerWidth <= 700) return;
+    const rect = editorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    resizeStart.current = { pointerX: event.clientX, pointerY: event.clientY, width: rect.width, height: rect.height };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const resizeWindow = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!resizeStart.current) return;
+    const maxWidth = Math.max(320, window.innerWidth - floatingRect.x - FLOATING_EDITOR_MARGIN);
+    const maxHeight = Math.max(280, window.innerHeight - floatingRect.y - FLOATING_EDITOR_MARGIN);
+    setFloatingRect((current) => ({
+      ...current,
+      width: Math.min(maxWidth, Math.max(Math.min(FLOATING_EDITOR_MIN_WIDTH, maxWidth), resizeStart.current!.width + event.clientX - resizeStart.current!.pointerX)),
+      height: Math.min(maxHeight, Math.max(Math.min(FLOATING_EDITOR_MIN_HEIGHT, maxHeight), resizeStart.current!.height + event.clientY - resizeStart.current!.pointerY)),
+    }));
+  };
+
+  const endWindowResize = () => {
+    resizeStart.current = null;
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const modifier = event.metaKey || event.ctrlKey;
     if (modifier && event.key === " ") {
       event.preventDefault();
+      if (!completionAllowed) {
+        setForceSuggestions(false);
+        return;
+      }
       setSuggestionsDismissed(false);
       setForceSuggestions(true);
-      return;
-    }
-    if (modifier && event.key.toLocaleLowerCase() === "f") {
-      event.preventDefault();
-      openFind();
       return;
     }
     if (modifier && event.key === "/") {
@@ -412,20 +535,29 @@ export function RobotCodeEditor({
     setForceSuggestions(false);
   };
 
-  return (
-    <>
-    {expanded && <button type="button" className="ide-modal-backdrop" onClick={toggleExpanded} aria-label="Close expanded code editor" />}
+  const editor = (
     <div
+      ref={editorRef}
       className={`robot-code-ide${expanded ? " is-expanded" : ""}`}
       role={expanded ? "dialog" : undefined}
-      aria-modal={expanded ? true : undefined}
       aria-label={expanded ? "Expanded robot code editor" : undefined}
+      style={expanded ? {
+        left: floatingRect.x,
+        top: floatingRect.y,
+        width: floatingRect.width,
+        height: floatingRect.height,
+      } : undefined}
     >
-      <div className="ide-titlebar">
-        <div className="ide-window-controls" aria-hidden="true"><i /><i /><i /></div>
+      <div
+        className="ide-titlebar"
+        title={expanded ? "Drag to move the editor window" : undefined}
+        onPointerDown={beginWindowDrag}
+        onPointerMove={dragWindow}
+        onPointerUp={endWindowDrag}
+        onPointerCancel={endWindowDrag}
+      >
         <div className="ide-file-tab"><span className="ide-java-icon">J</span><strong>{fileName}</strong><i /></div>
         <div className="ide-title-actions">
-          <button type="button" onClick={openFind} title="Find in file (Ctrl/Command + F)">Find</button>
           <button
             type="button"
             className={commandReferenceOpen ? "active" : ""}
@@ -441,29 +573,6 @@ export function RobotCodeEditor({
           ><span aria-hidden="true">{expanded ? "↙" : "↗"}</span>{expanded ? "Collapse" : "Expand"}</button>
         </div>
       </div>
-      {findOpen && <div className="ide-findbar">
-        <input
-          ref={findInputRef}
-          aria-label="Find in robot code"
-          value={findQuery}
-          onChange={(event) => {
-            setFindQuery(event.target.value);
-            setFindIndex(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              goToFindMatch(event.shiftKey ? -1 : 1);
-            }
-            if (event.key === "Escape") closeFind();
-          }}
-          placeholder="Find"
-        />
-        <span>{findMatches.length ? `${resolvedFindIndex + 1} / ${findMatches.length}` : "No results"}</span>
-        <button type="button" onClick={() => goToFindMatch(-1)} disabled={!findMatches.length} aria-label="Previous result">↑</button>
-        <button type="button" onClick={() => goToFindMatch(1)} disabled={!findMatches.length} aria-label="Next result">↓</button>
-        <button type="button" onClick={closeFind} aria-label="Close find">×</button>
-      </div>}
       <div className="ide-editor-body">
         <div className="ide-line-numbers" aria-hidden="true">
           <div style={{ transform: `translateY(${-scroll.top}px)` }}>
@@ -487,8 +596,8 @@ export function RobotCodeEditor({
             onClick={updateSelection}
             onKeyUp={updateSelection}
             onSelect={updateSelection}
-            onFocus={() => setFocused(true)}
-            onBlur={() => window.setTimeout(() => setFocused(false), 100)}
+            onFocus={handleEditorFocus}
+            onBlur={handleEditorBlur}
             onScroll={(event) => setScroll({ top: event.currentTarget.scrollTop, left: event.currentTarget.scrollLeft })}
             wrap="off"
             spellCheck={false}
@@ -499,7 +608,8 @@ export function RobotCodeEditor({
             className="ide-completion-menu"
             role="listbox"
             aria-label="Code suggestions"
-            style={{ top: completionTop, left: completionLeft }}
+            data-placement={completionBelow ? "below" : "above"}
+            style={{ top: completionTop, left: completionLeft, maxHeight: completionMaxHeight }}
           >
             <div className="ide-completion-head"><span>RoboLab suggestions</span><kbd>Ctrl Space</kbd></div>
             {suggestions.map((completion, index) => <button
@@ -528,7 +638,18 @@ export function RobotCodeEditor({
         <span>{controlMode === "teleop" ? "TeleOp bindings" : `Level ${levelNumber}`}</span>
         <span>Java · RoboLab subset</span>
       </div>
+      {expanded && <button
+        type="button"
+        className="ide-resize-handle"
+        aria-label="Resize code editor window"
+        title="Drag to resize"
+        onPointerDown={beginWindowResize}
+        onPointerMove={resizeWindow}
+        onPointerUp={endWindowResize}
+        onPointerCancel={endWindowResize}
+      />}
     </div>
-    </>
   );
+
+  return expanded ? createPortal(editor, document.body) : editor;
 }

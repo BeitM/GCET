@@ -15,6 +15,7 @@ import { parseRobotCode } from "@/lib/autonomous";
 import { clampMotorPower, driveAxesFromMotorPowers, mecanumMotorPowers, setMotorPower, sidePowersFromMotors, stoppedMotorPowers, type RobotMotorPowers } from "@/lib/motors";
 import { createVirtualGamepadSnapshot, GamepadPair, GamepadSnapshot, isAnalogControl, isBindingActive, parseTeleopBindings, readConnectedGamepads, readGamepadControl, TeleopBinding } from "@/lib/teleop";
 import { getComplexityLevel, getLearningScenario, getLearningScenarioNavigation, normalizeExperienceLevel, type ExperienceLevel, type LearningScenario } from "@/lib/learning";
+import { evaluateLearningRun, type LearningCheckResult } from "@/lib/learningEvaluation";
 import { withBasePath } from "@/lib/basePath";
 
 type StartPose = { x: number; y: number; heading: number };
@@ -33,7 +34,7 @@ type TeleopRuntime = {
   artifacts: SimArtifact[];
   previousGamepadBindings: Record<string, boolean>;
 };
-const defaultGoal = "Test robot code on the DECODE field.";
+const defaultGoal = "";
 const defaultCode = `driveToPosition(72, 90, 145);
 spinFlywheel(2400);
 shoot(60);`;
@@ -90,7 +91,9 @@ const DECODE_ARTIFACT_SCORE_POINTS = 10;
 const DECODE_SHOT_MIN_SPEED = 5.2;
 const DECODE_SHOT_MIN_ANGLE = 32;
 const DECODE_SHOT_MAX_ANGLE = 62;
-const artifactSpecs: ArtifactSpec[] = [
+// Source coordinates follow the DECODE asset axes; normalize them once so
+// simulation, rendering, and telemetry keep the official field locations.
+const artifactSpecs: ArtifactSpec[] = ([
   { id: "top-loading-purple-left", row: "topLoading", x: 126.75, y: 138, color: "purple" },
   { id: "top-loading-green", row: "topLoading", x: 133.75, y: 138, color: "green" },
   { id: "top-loading-purple-right", row: "topLoading", x: 140.75, y: 138, color: "purple" },
@@ -115,7 +118,11 @@ const artifactSpecs: ArtifactSpec[] = [
   { id: "bottom-loading-purple-left", row: "bottomLoading", x: 126.75, y: 6, color: "purple" },
   { id: "bottom-loading-green", row: "bottomLoading", x: 133.75, y: 6, color: "green" },
   { id: "bottom-loading-purple-right", row: "bottomLoading", x: 140.75, y: 6, color: "purple" },
-];
+] satisfies ArtifactSpec[]).map((artifact) => ({
+  ...artifact,
+  x: FIELD_SIZE_INCHES - artifact.y,
+  y: artifact.x,
+}));
 
 const baseFrame: TelemetryFrame = {
   x: defaultStartPose.x,
@@ -928,7 +935,7 @@ function generateRobotCodeFrames(
     current = constrainRobotPose(target, robotWidth, robotLength);
   };
 
-  const advanceTurn = (heading: number) => {
+  const advanceTurn = (heading: number, event = `turnTo ${heading.toFixed(0)} deg`) => {
     const start = { ...current };
     const delta = headingDelta(start.heading, heading);
     const totalTime = Math.max(0.17, Math.abs(delta) / AUTO_TURN_DEGREES_PER_SECOND);
@@ -957,7 +964,7 @@ function generateRobotCodeFrames(
           rearRightDrive: frameDrivePowers.rearRightDrive,
         },
         feeder: false,
-        event: [i === 1 ? `turn ${heading.toFixed(0)} deg` : "", contactEvent].filter(Boolean).join("; "),
+        event: [i === 1 ? event : "", contactEvent].filter(Boolean).join("; "),
         warning: contactEvent === "controlled 4 artifacts" ? "controlled 4 artifacts" : undefined,
       });
     }
@@ -1036,6 +1043,12 @@ function generateRobotCodeFrames(
     }
 
     if (command.type === "turn") {
+      const targetHeading = normalizeHeading(current.heading + command.degrees);
+      const signedDegrees = `${command.degrees >= 0 ? "+" : ""}${command.degrees.toFixed(0)}`;
+      advanceTurn(targetHeading, `turn ${signedDegrees} deg relative`);
+    }
+
+    if (command.type === "turnTo") {
       advanceTurn(command.heading);
     }
 
@@ -1256,6 +1269,7 @@ export default function SimulatorDashboard() {
   const [analysisPending, setAnalysisPending] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
   const [setupWarning, setSetupWarning] = useState("");
+  const [lessonCheck, setLessonCheck] = useState<LearningCheckResult | null>(null);
   const [liveScore, setLiveScore] = useState<ScoreBreakdown>(emptyScore());
   const [physicalGamepad, setPhysicalGamepad] = useState<GamepadSnapshot | null>(null);
   const [virtualGamepad, setVirtualGamepad] = useState<GamepadSnapshot>(() => createVirtualGamepadSnapshot());
@@ -1269,7 +1283,6 @@ export default function SimulatorDashboard() {
   const physicsRecordingArtifacts = useRef<Map<number, ArtifactPhysicsState[]>>(new Map());
   const physicsCollectedArtifacts = useRef<Set<string>>(new Set());
   const physicsRecordingShots = useRef<Map<number, ShotPhysicsState[]>>(new Map());
-  const lastAutoAnalysisRun = useRef<number | null>(null);
 
   const code = controlMode === "autonomous" ? autonomousCode : teleopCode;
   const setCode = controlMode === "autonomous" ? setAutonomousCode : setTeleopCode;
@@ -1324,7 +1337,6 @@ export default function SimulatorDashboard() {
       setExperienceLevel(validLevel);
       if (!requestedLearningMode) {
         if (requestedLevel !== null) {
-          setGoal(level.sandboxGoal);
           setAutonomousCode(level.sandboxCode);
         }
         return;
@@ -1341,7 +1353,8 @@ export default function SimulatorDashboard() {
       setStartX(scenario.startPose.x);
       setStartY(scenario.startPose.y);
       setStartHeading(scenario.startPose.heading);
-      setFrames([createSetupFrame(scenario.startPose, scenario.preloadCount, defaultArtifactRows)]);
+      setSelectedArtifactRows(scenario.artifactRows);
+      setFrames([createSetupFrame(scenario.startPose, scenario.preloadCount, scenario.artifactRows)]);
       setIndex(0);
     }, 0);
     return () => window.clearTimeout(updateLevel);
@@ -1394,16 +1407,17 @@ export default function SimulatorDashboard() {
     setRunning(false);
   };
 
-  const resetForCodeWorkspace = (pose: StartPose, nextPreloadCount: number) => {
+  const resetForCodeWorkspace = (pose: StartPose, nextPreloadCount: number, artifactRows = selectedArtifactRows) => {
     stopPlayback();
     setPlaybackId((id) => id + 1);
-    setFrames([createSetupFrame(pose, nextPreloadCount, selectedArtifactRows)]);
+    setFrames([createSetupFrame(pose, nextPreloadCount, artifactRows)]);
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
     setAnalysisSource(null);
     setChatMessages([]);
     setAnalysisError("");
+    setLessonCheck(null);
     setSetupWarning("");
     resetLiveScore();
   };
@@ -1420,9 +1434,10 @@ export default function SimulatorDashboard() {
     setStartX(scenario.startPose.x);
     setStartY(scenario.startPose.y);
     setStartHeading(scenario.startPose.heading);
-    resetForCodeWorkspace(scenario.startPose, scenario.preloadCount);
+    setSelectedArtifactRows(scenario.artifactRows);
+    resetForCodeWorkspace(scenario.startPose, scenario.preloadCount, scenario.artifactRows);
     const level = getComplexityLevel(scenario.level);
-    window.history.replaceState(null, "", `/simulator?mode=learning&level=${level.number}&scenario=${scenario.id}`);
+    window.history.replaceState(null, "", withBasePath(`/simulator?mode=learning&level=${level.number}&scenario=${scenario.id}`));
   };
 
   const updateExperienceLevel = (levelId: ExperienceLevel) => {
@@ -1434,10 +1449,9 @@ export default function SimulatorDashboard() {
       return;
     }
 
-    setGoal(level.sandboxGoal);
     setAutonomousCode(level.sandboxCode);
     resetForCodeWorkspace({ x: startX, y: startY, heading: startHeading }, preloadCount);
-    window.history.replaceState(null, "", `/simulator?mode=sandbox&level=${level.number}`);
+    window.history.replaceState(null, "", withBasePath(`/simulator?mode=sandbox&level=${level.number}`));
   };
 
   const updateLearningScenario = (scenarioId: string) => {
@@ -1455,6 +1469,7 @@ export default function SimulatorDashboard() {
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setLessonCheck(null);
     setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
@@ -1469,6 +1484,7 @@ export default function SimulatorDashboard() {
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setLessonCheck(null);
     setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
@@ -1482,6 +1498,7 @@ export default function SimulatorDashboard() {
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setLessonCheck(null);
     setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
@@ -1738,6 +1755,7 @@ export default function SimulatorDashboard() {
     setIndex(0);
     setHasRun(false);
     setAnalysis(null);
+    setLessonCheck(null);
     setChatMessages([]);
     setSetupWarning("");
     resetLiveScore();
@@ -1940,6 +1958,7 @@ export default function SimulatorDashboard() {
       setIndex(0);
       setHasRun(false);
       setAnalysis(null);
+      setLessonCheck(null);
       setChatMessages([]);
       setSetupWarning("Invalid start position");
       return;
@@ -1949,6 +1968,7 @@ export default function SimulatorDashboard() {
     setAnalysis(null);
     setChatMessages([]);
     setAnalysisError("");
+    setLessonCheck(null);
     setSetupWarning("");
     setHasRun(false);
     resetLiveScore();
@@ -1957,6 +1977,21 @@ export default function SimulatorDashboard() {
       return;
     }
     playFrames(generateRobotCodeFrames(code, startPose, coordinateSystem, preloadCount, robotWidth, robotLength, selectedArtifactRows), 0, true);
+  };
+
+  const updateCode = (nextCode: string) => {
+    setCode(nextCode);
+    setHasRun(false);
+    setLessonCheck(null);
+    setAnalysis(null);
+    setAnalysisSource(null);
+    setChatMessages([]);
+    setAnalysisError("");
+  };
+
+  const checkLearningSolution = () => {
+    if (!learningMode || !hasRun) return;
+    setLessonCheck(evaluateLearningRun(getLearningScenario(selectedScenarioId, experienceLevel), code, frames));
   };
 
   const togglePlayback = () => {
@@ -2055,12 +2090,6 @@ export default function SimulatorDashboard() {
   }, [allianceColor, chatMessages, code, controlMode, coordinateSystem, displayStartPosition.x, displayStartPosition.y, experienceLevel, frames, goal, learningMode, preloadCount, robotId, robotLength, robotWidth, selectedArtifactRows, selectedScenarioId, startHeading]);
 
   useEffect(() => {
-    if (controlMode !== "autonomous" || !hasRun || running || frames.length <= 1 || lastAutoAnalysisRun.current === runId) return;
-    lastAutoAnalysisRun.current = runId;
-    void requestAnalysis();
-  }, [controlMode, frames.length, hasRun, requestAnalysis, runId, running]);
-
-  useEffect(() => {
     if (controlMode !== "teleop") {
       teleopKeys.current.clear();
       return;
@@ -2127,7 +2156,7 @@ export default function SimulatorDashboard() {
       </header>
       {learningMode && <section className={`lab-guide ${experienceLevel}`}>
         <div><span>LEVEL {activeLevel.number} · {selectedScenario.number} GUIDED LAB</span><strong>{selectedScenario.title} · {activeLevel.syntaxLabel}</strong></div>
-        <ol><li><b>1</b> Read the goal</li><li><b>2</b> Run the robot</li><li><b>3</b> Review feedback</li></ol>
+        <ol><li><b>1</b> Review instructions</li><li><b>2</b> Run the robot</li><li><b>3</b> Check solution</li></ol>
         <nav className="lesson-navigation" aria-label="Lesson navigation">
           <div className="lesson-stepper">
             <button type="button" disabled={!lessonNavigation.previous} onClick={() => lessonNavigation.previous && updateLearningScenario(lessonNavigation.previous.id)} aria-label="Previous lesson"><span>←</span><small>Previous</small></button>
@@ -2150,7 +2179,7 @@ export default function SimulatorDashboard() {
             goal,
             setGoal,
             code,
-            setCode,
+            setCode: updateCode,
             running,
             robotId,
             allianceColor,
@@ -2172,6 +2201,8 @@ export default function SimulatorDashboard() {
           onRobot={selectRobot}
           onRun={run}
           onStop={stopSimulation}
+          onCheckSolution={checkLearningSolution}
+          lessonCheck={lessonCheck}
           onAnalyze={() => void requestAnalysis()}
           analyzing={analysisPending}
           canAnalyze={hasRun}
@@ -2222,7 +2253,7 @@ export default function SimulatorDashboard() {
               />
             </div>
           )}
-          {(hasRun || analysis) && (
+          {(analysis || analysisPending || analysisError) && (
             <div id="analysis">
               <AIFeedbackPanel
                 data={analysis}
@@ -2233,15 +2264,15 @@ export default function SimulatorDashboard() {
                 source={analysis ? analysisSource : null}
                 onSend={(question) => void requestAnalysis(question)}
               />
-              {learningMode && analysis?.status === "complete" && (
-                <section className="lesson-complete-navigation">
-                  <div><span>LESSON COMPLETE</span><strong>{selectedScenario.number} · {selectedScenario.title}</strong></div>
-                  {lessonNavigation.next
-                    ? <button type="button" onClick={() => updateLearningScenario(lessonNavigation.next!.id)}><span><small>CONTINUE TO</small><strong>{lessonNavigation.next.number} · {lessonNavigation.next.title}</strong></span><b>→</b></button>
-                    : <Link href="/learn"><span><small>CURRICULUM COMPLETE</small><strong>Return to all lessons</strong></span><b>→</b></Link>}
-                </section>
-              )}
             </div>
+          )}
+          {learningMode && lessonCheck?.passed && (
+            <section className="lesson-complete-navigation">
+              <div><span>LESSON COMPLETE</span><strong>{selectedScenario.number} · {selectedScenario.title}</strong></div>
+              {lessonNavigation.next
+                ? <button type="button" onClick={() => updateLearningScenario(lessonNavigation.next!.id)}><span><small>CONTINUE TO</small><strong>{lessonNavigation.next.number} · {lessonNavigation.next.title}</strong></span><b>→</b></button>
+                : <Link href="/learn"><span><small>CURRICULUM COMPLETE</small><strong>Return to all lessons</strong></span><b>→</b></Link>}
+            </section>
           )}
         </div>
       </div>
